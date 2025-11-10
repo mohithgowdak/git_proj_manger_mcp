@@ -1,0 +1,22 @@
+# Core dependencies
+mcp>=1.0.0
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+pygithub>=2.0.0
+anthropic>=0.40.0
+openai>=1.0.0
+google-generativeai>=0.8.0
+# perplexity>=0.1.0  # Package not available, using alternative or direct API calls
+python-dotenv>=1.0.0
+click>=8.0.0
+httpx>=0.27.0
+aiohttp>=3.9.0
+
+# Development dependencies
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.0.0
+black>=23.0.0
+ruff>=0.1.0
+mypy>=1.0.0
+

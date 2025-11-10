@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "github-project-manager": {
+      "command": "D:/New folder/mcp-github-project-manager/venv/Scripts/python.exe",
+      "args": ["-m", "src"],
+      "cwd": "D:/New folder/mcp-github-project-manager",
+      "env": {
+        "PYTHONPATH": "D:/New folder/mcp-github-project-manager",
+        "GITHUB_TOKEN": "your_github_token_here",
+        "GITHUB_OWNER": "your_github_username_or_organization",
+        "GITHUB_REPO": "your_repository_name"
+      }
+    }
+  }
+}
+
+
