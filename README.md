@@ -4,10 +4,13 @@ A comprehensive Model Context Protocol (MCP) server built in Python that provide
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python Version](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/)
+[![Version](https://img.shields.io/badge/version-1.0.1-blue.svg)](https://github.com/your-username/git_proj_manger_mcp)
 
 ## Overview
 
 This server implements the [Model Context Protocol](https://modelcontextprotocol.io) to provide comprehensive GitHub project management through GitHub's GraphQL API. It offers 40+ tools for managing projects, issues, milestones, sprints, labels, and custom fields while maintaining state and handling errors according to MCP specifications.
+
+The server is built with Python 3.8+ and follows Clean Architecture principles, providing a maintainable and extensible codebase for GitHub project management operations.
 
 ### 🚀 Key Features
 
@@ -56,11 +59,13 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-#### Option 2: Install as Package (if published)
+#### Option 2: Install as Package (Coming Soon)
 
 ```bash
 pip install mcp-github-project-manager
 ```
+
+**Note**: Package publication is planned for future releases.
 
 ### Configuration
 
@@ -462,9 +467,45 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [GitHub Projects API](https://docs.github.com/en/issues/planning-and-tracking-with-projects/automating-your-project/using-the-api-to-manage-projects)
 - [GitHub GraphQL API](https://docs.github.com/en/graphql)
 
+## Current Status
+
+### ✅ Implemented Features
+
+- **40+ MCP Tools**: All core project management tools are fully implemented
+- **Project Management**: Complete CRUD operations for GitHub Projects v2
+- **Issue Management**: Full issue lifecycle management
+- **Milestone Management**: Create, update, delete, and track milestones
+- **Sprint Planning**: Sprint creation, planning, and metrics tracking
+- **Roadmap Creation**: Automated roadmap generation with milestones and issues
+- **Custom Fields & Views**: Support for custom project fields and views
+- **Error Handling**: Comprehensive error handling with retry mechanisms
+- **Caching**: In-memory resource caching with TTL support
+- **Event System**: Event store for tracking resource changes
+
+### 🔄 Future Enhancements
+
+- AI-powered task generation and analysis (infrastructure ready)
+- Webhook integration for real-time updates
+- Persistent caching (Redis/database-backed)
+- Advanced metrics and reporting
+- Multi-repository support
+
 ## Documentation
 
 - [Architecture](ARCHITECTURE.md) - System architecture and design
 - [User Guide](docs/user-guide.md) - Detailed usage instructions
 - [Tutorials](docs/tutorials/getting-started.md) - Step-by-step guides
 - [GitHub Projects Integration](docs/mcp/github-projects-integration.md) - Integration details
+
+## Utilities
+
+### Cleanup Script
+
+A utility script is provided for bulk operations:
+
+```bash
+# Delete all projects and close all issues
+python delete_all_projects_and_issues.py
+```
+
+**Note**: The script requires confirmation before performing destructive operations. GitHub does not allow deleting issues, only closing them.
