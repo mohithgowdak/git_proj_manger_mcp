@@ -6,7 +6,7 @@ This tutorial will guide you through the process of setting up and using the Git
 
 Before you begin, make sure you have:
 
-- Node.js 18.x or higher installed
+- Python 3.8 or higher installed
 - A GitHub account with appropriate permissions
 - A GitHub Personal Access Token with required scopes:
   - `repo` (Full repository access)
@@ -19,19 +19,18 @@ First, let's install and configure the server:
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/github-project-manager-mcp.git
-cd github-project-manager-mcp
+git clone https://github.com/your-username/git_proj_manger_mcp.git
+cd git_proj_manger_mcp
+
+# Create a virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 # Install dependencies
-npm install
-# or
-pnpm install
-
-# Create environment configuration
-cp .env.example .env
+pip install -r requirements.txt
 ```
 
-Now, edit the `.env` file with your GitHub credentials:
+Now, create a `.env` file with your GitHub credentials:
 
 ```env
 GITHUB_TOKEN=your_personal_access_token
@@ -39,16 +38,16 @@ GITHUB_OWNER=your_github_username_or_org
 GITHUB_REPO=your_repository_name
 ```
 
-## Step 2: Build and Start the Server
+## Step 2: Start the Server
 
-Build and start the MCP server:
+Start the MCP server:
 
 ```bash
-# Build the project
-npm run build
-
 # Start the server
-npm start
+python -m src
+
+# Or with verbose logging
+python -m src --verbose
 ```
 
 You should see output indicating that the server is running:
@@ -59,188 +58,288 @@ GitHub Project Manager MCP server running on stdio
 
 ## Step 3: Create Your First Project
 
-Let's create a simple project with one milestone. Create a file named `create-project.js`:
+Let's create a simple project with one milestone. Create a file named `create_project.py`:
 
-```javascript
-const { ProjectManagementService } = require('./build/services/ProjectManagementService');
-require('dotenv').config();
+```python
+#!/usr/bin/env python3
+"""Example script to create a project with milestones and issues."""
 
-async function createProject() {
-  // Initialize the service with your GitHub credentials
-  const service = new ProjectManagementService(
-    process.env.GITHUB_OWNER,
-    process.env.GITHUB_REPO,
-    process.env.GITHUB_TOKEN
-  );
+import asyncio
+import sys
+from pathlib import Path
 
-  try {
-    // Create a project with one milestone
-    const result = await service.createRoadmap({
-      project: {
-        title: "My First Project",
-        description: "A test project created with the MCP API",
-        visibility: "private"
-      },
-      milestones: [
-        {
-          milestone: {
-            title: "Phase 1",
-            description: "Initial phase of the project",
-            dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString() // 14 days from now
-          },
-          issues: [
-            {
-              title: "Setup project repository",
-              description: "Create and configure the initial project repository",
-              priority: "high",
-              type: "feature"
-            }
-          ]
+# Add src to path
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
+from src.env import GITHUB_TOKEN, GITHUB_OWNER, GITHUB_REPO
+from src.services.project_management_service import ProjectManagementService
+from src.domain.types import CreateProject, CreateMilestone, CreateIssue
+from datetime import datetime, timedelta
+
+
+async def create_project():
+    """Create a project with milestones and issues."""
+    # Initialize the service with your GitHub credentials
+    service = ProjectManagementService(GITHUB_OWNER, GITHUB_REPO, GITHUB_TOKEN)
+
+    try:
+        # Create a project
+        project_data = CreateProject(
+            title="My First Project",
+            owner=GITHUB_OWNER,
+            short_description="A test project created with the MCP API",
+            visibility="private"
+        )
+        
+        project = await service.create_project(project_data)
+        print(f'✅ Project created successfully!')
+        print(f'   Project ID: {project.id}')
+        print(f'   Project Title: {project.title}')
+        
+        # Create a milestone
+        milestone_data = CreateMilestone(
+            title="Phase 1",
+            description="Initial phase of the project",
+            due_date=(datetime.now() + timedelta(days=14)).isoformat()
+        )
+        
+        milestone = await service.create_milestone(milestone_data)
+        print(f'✅ Milestone created successfully!')
+        print(f'   Milestone ID: {milestone.id}')
+        print(f'   Milestone Title: {milestone.title}')
+        
+        # Create an issue
+        issue_data = CreateIssue(
+            title="Setup project repository",
+            description="Create and configure the initial project repository",
+            priority="high",
+            issue_type="feature"
+        )
+        
+        issue = await service.create_issue(issue_data)
+        print(f'✅ Issue created successfully!')
+        print(f'   Issue ID: {issue.id}')
+        print(f'   Issue #: {issue.number}')
+        print(f'   Issue Title: {issue.title}')
+        
+        return {
+            "project": project,
+            "milestone": milestone,
+            "issue": issue
         }
-      ]
-    });
+        
+    except Exception as e:
+        print(f'❌ Error creating project: {e}')
+        import traceback
+        traceback.print_exc()
+        raise
 
-    console.log('Project created successfully!');
-    console.log('Project ID:', result.project.id);
-    console.log('Project Title:', result.project.title);
-    console.log('Milestone:', result.milestones[0].title);
-    console.log('Issue:', result.milestones[0].issues[0].title);
-    
-    return result;
-  } catch (error) {
-    process.stderr.write('Error creating project:', error);
-  }
-}
 
-createProject();
+if __name__ == "__main__":
+    asyncio.run(create_project())
 ```
 
 Run the script:
 
 ```bash
-node create-project.js
+python create_project.py
 ```
 
-You should see output confirming that your project was created successfully.
+You should see output confirming that your project, milestone, and issue were created successfully.
 
 ## Step 4: Plan a Sprint
 
-Now, let's plan a sprint with our issues. Create a file named `plan-sprint.js`:
+Now, let's plan a sprint with our issues. Create a file named `plan_sprint.py`:
 
-```javascript
-const { ProjectManagementService } = require('./build/services/ProjectManagementService');
-require('dotenv').config();
+```python
+#!/usr/bin/env python3
+"""Example script to plan a sprint with issues."""
 
-async function planSprint() {
-  // Initialize the service with your GitHub credentials
-  const service = new ProjectManagementService(
-    process.env.GITHUB_OWNER,
-    process.env.GITHUB_REPO,
-    process.env.GITHUB_TOKEN
-  );
+import asyncio
+import sys
+from pathlib import Path
+from datetime import datetime, timedelta
 
-  try {
-    // Get the issue ID from the previous step
-    // For this example, we'll assume it's 1, but you should replace this with your actual issue ID
-    const issueId = 1;
+# Add src to path
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-    // Plan a sprint with the issue
-    const sprint = await service.planSprint({
-      sprint: {
-        title: "Sprint 1",
-        startDate: new Date().toISOString(),
-        endDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 days from now
-        goals: [
-          "Complete initial project setup",
-          "Establish development workflow"
-        ]
-      },
-      issueIds: [issueId]
-    });
+from src.env import GITHUB_TOKEN, GITHUB_OWNER, GITHUB_REPO
+from src.services.project_management_service import ProjectManagementService
+from src.domain.types import CreateSprint
 
-    console.log('Sprint planned successfully!');
-    console.log('Sprint ID:', sprint.id);
-    console.log('Sprint Title:', sprint.title);
-    console.log('Sprint Goals:', sprint.goals);
-    console.log('Issues:', sprint.issues);
-    
-    return sprint;
-  } catch (error) {
-    process.stderr.write('Error planning sprint:', error);
-  }
-}
 
-planSprint();
+async def plan_sprint():
+    """Plan a sprint with issues."""
+    service = ProjectManagementService(GITHUB_OWNER, GITHUB_REPO, GITHUB_TOKEN)
+
+    try:
+        # Get the issue ID from the previous step
+        # For this example, we'll assume it's "1", but you should replace this with your actual issue ID
+        issue_id = "1"
+
+        # Plan a sprint with the issue
+        sprint_data = CreateSprint(
+            title="Sprint 1",
+            description="First sprint for the project",
+            start_date=datetime.now().isoformat(),
+            end_date=(datetime.now() + timedelta(days=7)).isoformat(),
+            issues=[issue_id],
+            goals=[
+                "Complete initial project setup",
+                "Establish development workflow"
+            ]
+        )
+        
+        sprint = await service.create_sprint(sprint_data)
+        
+        print('✅ Sprint planned successfully!')
+        print(f'   Sprint ID: {sprint.id}')
+        print(f'   Sprint Title: {sprint.title}')
+        print(f'   Sprint Start: {sprint.start_date}')
+        print(f'   Sprint End: {sprint.end_date}')
+        print(f'   Issues: {sprint.issues}')
+        
+        return sprint
+        
+    except Exception as e:
+        print(f'❌ Error planning sprint: {e}')
+        import traceback
+        traceback.print_exc()
+        raise
+
+
+if __name__ == "__main__":
+    asyncio.run(plan_sprint())
 ```
 
 Run the script:
 
 ```bash
-node plan-sprint.js
+python plan_sprint.py
 ```
 
 ## Step 5: Track Progress
 
-Finally, let's check the progress of our sprint. Create a file named `track-progress.js`:
+Finally, let's check the progress of our sprint. Create a file named `track_progress.py`:
 
-```javascript
-const { ProjectManagementService } = require('./build/services/ProjectManagementService');
-require('dotenv').config();
+```python
+#!/usr/bin/env python3
+"""Example script to track sprint progress."""
 
-async function trackProgress() {
-  // Initialize the service with your GitHub credentials
-  const service = new ProjectManagementService(
-    process.env.GITHUB_OWNER,
-    process.env.GITHUB_REPO,
-    process.env.GITHUB_TOKEN
-  );
+import asyncio
+import sys
+from pathlib import Path
 
-  try {
-    // Get the sprint ID from the previous step
-    // For this example, we'll assume it's "sprint_1", but you should replace this with your actual sprint ID
-    const sprintId = "sprint_1";
+# Add src to path
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-    // Get sprint metrics
-    const metrics = await service.getSprintMetrics(sprintId, true);
+from src.env import GITHUB_TOKEN, GITHUB_OWNER, GITHUB_REPO
+from src.services.project_management_service import ProjectManagementService
 
-    console.log('Sprint Metrics:');
-    console.log('Title:', metrics.sprint.title);
-    console.log('Status:', metrics.sprint.status);
-    console.log('Progress:', `${metrics.progress.completionPercentage}%`);
-    console.log('Open Issues:', metrics.progress.openIssues);
-    console.log('Closed Issues:', metrics.progress.closedIssues);
-    
-    // Display issues if available
-    if (metrics.issues && metrics.issues.length > 0) {
-      console.log('\nIssues:');
-      metrics.issues.forEach(issue => {
-        console.log(`- ${issue.title} (${issue.status})`);
-      });
-    }
-    
-    return metrics;
-  } catch (error) {
-    process.stderr.write('Error tracking progress:', error);
-  }
-}
 
-trackProgress();
+async def track_progress():
+    """Track sprint progress."""
+    service = ProjectManagementService(GITHUB_OWNER, GITHUB_REPO, GITHUB_TOKEN)
+
+    try:
+        # Get the sprint ID from the previous step
+        # For this example, we'll assume it's "sprint-1", but you should replace this with your actual sprint ID
+        sprint_id = "sprint-1"
+
+        # Get sprint metrics
+        metrics = await service.get_sprint_metrics(sprint_id, include_issues=True)
+
+        print('📊 Sprint Metrics:')
+        print(f'   Title: {metrics["sprint"]["title"]}')
+        print(f'   Status: {metrics["sprint"]["status"]}')
+        print(f'   Progress: {metrics["completion_percentage"]}%')
+        print(f'   Open Issues: {metrics["open_issues"]}')
+        print(f'   Closed Issues: {metrics["closed_issues"]}')
+        print(f'   Total Issues: {metrics["total_issues"]}')
+        
+        # Display issues if available
+        if metrics.get("issues") and len(metrics["issues"]) > 0:
+            print('\n📋 Issues:')
+            for issue in metrics["issues"]:
+                status = issue.get("status", "unknown")
+                title = issue.get("title", "Untitled")
+                print(f'   - {title} ({status})')
+        
+        return metrics
+        
+    except Exception as e:
+        print(f'❌ Error tracking progress: {e}')
+        import traceback
+        traceback.print_exc()
+        raise
+
+
+if __name__ == "__main__":
+    asyncio.run(track_progress())
 ```
 
 Run the script:
 
 ```bash
-node track-progress.js
+python track_progress.py
 ```
 
-## Step 6: Explore the API
+## Step 6: Using MCP Tools Directly
+
+You can also use the MCP tools directly through an MCP client. Here's an example using the MCP Python SDK:
+
+```python
+import asyncio
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+
+async def use_mcp_tools():
+    """Use MCP tools directly."""
+    # Configure server parameters
+    server_params = StdioServerParameters(
+        command="python",
+        args=["-m", "src"],
+        env={
+            "GITHUB_TOKEN": "your_token",
+            "GITHUB_OWNER": "your_username",
+            "GITHUB_REPO": "your_repo"
+        }
+    )
+    
+    async with stdio_client(server_params) as (read, write):
+        async with ClientSession(read, write) as session:
+            # Initialize the session
+            await session.initialize()
+            
+            # List available tools
+            tools = await session.list_tools()
+            print(f"Available tools: {[tool.name for tool in tools.tools]}")
+            
+            # Create a project
+            result = await session.call_tool(
+                "create_project",
+                {
+                    "title": "MCP Project",
+                    "owner": "your_username",
+                    "visibility": "private"
+                }
+            )
+            
+            print(f"Project created: {result.content}")
+
+if __name__ == "__main__":
+    asyncio.run(use_mcp_tools())
+```
+
+## Step 7: Explore the API
 
 Now that you've completed the basic workflow, explore the full API capabilities:
 
-1. Check out the [API Reference](../api-reference/index.md) for all available tools
+1. Check out the [User Guide](../user-guide.md) for all available tools
 2. Try creating more complex projects with multiple milestones
 3. Experiment with different issue types and priorities
 4. Track progress across multiple sprints
+5. Use custom fields and views
 
 ## Troubleshooting
 
@@ -262,8 +361,8 @@ Error: Unauthorized: Bad credentials
 Error: Rate limited: API rate limit exceeded
 ```
 
+- The server automatically handles rate limits with retry
 - Implement request batching for large operations
-- Add retry logic with exponential backoff
 - Monitor rate limit headers in responses
 
 ### Resource Not Found
@@ -276,11 +375,21 @@ Error: Resource not found: Issue with ID 123 not found
 - Check that you have access to the resources
 - Ensure you're using the correct owner and repository
 
+### Import Errors
+
+```
+ModuleNotFoundError: No module named 'mcp'
+```
+
+- Ensure your virtual environment is activated
+- Install dependencies: `pip install -r requirements.txt`
+- Verify Python version: `python --version` (should be 3.8+)
+
 ## Next Steps
 
 Congratulations! You've completed the getting started tutorial. Here are some next steps:
 
-1. Explore the [API Reference](../api-reference/index.md) to learn about all available tools
-2. Check out the [Examples](../../examples/README.md) directory for more code samples
-3. Learn about [advanced features](./advanced-features.md) like custom fields and automation
-4. Contribute to the project by following the [Contributing Guide](../contributing/index.md)
+1. Explore the [User Guide](../user-guide.md) to learn about all available tools
+2. Check out the [Architecture Documentation](../../ARCHITECTURE.md) to understand the system design
+3. Read the [GitHub Projects Integration Guide](../mcp/github-projects-integration.md) for advanced usage
+4. Contribute to the project by following the [Contributing Guide](../../CONTRIBUTING.md)
