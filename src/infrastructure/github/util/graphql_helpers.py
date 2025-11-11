@@ -1,7 +1,7 @@
 """GraphQL helpers for GitHub API."""
 
 from typing import Dict, Any, Optional
-from ...domain.types import FieldType
+from ....domain.types import FieldType
 
 
 def map_to_graphql_field_type(field_type: FieldType) -> str:

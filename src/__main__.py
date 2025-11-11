@@ -90,6 +90,22 @@ class GitHubProjectManagerServer:
                 from .infrastructure.tools.tool_handlers import execute_tool
                 from .infrastructure.tools.tool_validator import ToolValidator
                 from mcp.types import TextContent
+                import json
+                
+                # Log raw arguments received from MCP client
+                self.logger.debug(f"=== Tool Call: {name} ===")
+                self.logger.debug(f"Raw arguments type: {type(arguments)}")
+                self.logger.debug(f"Raw arguments: {json.dumps(arguments, indent=2, default=str)}")
+                
+                # Log nested structure details for roadmap
+                if name == "create_roadmap" and isinstance(arguments, dict):
+                    if "project" in arguments:
+                        project = arguments["project"]
+                        self.logger.debug(f"Project type: {type(project)}")
+                        self.logger.debug(f"Project value: {project}")
+                        self.logger.debug(f"Project repr: {repr(project)}")
+                        if hasattr(project, '__dict__'):
+                            self.logger.debug(f"Project __dict__: {project.__dict__}")
                 
                 tool = self.tool_registry.get_tool(name)
                 if not tool:
@@ -98,8 +114,15 @@ class GitHubProjectManagerServer:
                 # Validate arguments
                 try:
                     validated_args = ToolValidator.validate(name, arguments, tool.schema)
+                    self.logger.debug(f"Validated args type: {type(validated_args)}")
+                    if hasattr(validated_args, 'model_dump'):
+                        self.logger.debug(f"Validated args (Pydantic): {validated_args.model_dump()}")
+                    elif isinstance(validated_args, dict):
+                        self.logger.debug(f"Validated args (dict): {json.dumps(validated_args, indent=2, default=str)}")
                 except Exception as validation_error:
                     self.logger.error(f"Tool validation error: {validation_error}")
+                    import traceback
+                    self.logger.error(f"Validation traceback: {traceback.format_exc()}")
                     raise ValueError(f"Invalid arguments for tool {name}: {validation_error}")
                 
                 # Execute tool handler

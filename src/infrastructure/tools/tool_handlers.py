@@ -84,25 +84,63 @@ async def execute_create_issue(
     args: Dict[str, Any]
 ) -> MCPResponse:
     """Execute create_issue tool."""
-    from ...domain.types import CreateIssue
-    
-    create_issue = CreateIssue(
-        title=get_arg_value(args, "title"),
-        description=get_arg_value(args, "description"),
-        milestone_id=get_arg_value(args, "milestone_id"),
-        assignees=get_arg_value(args, "assignees", []),
-        labels=get_arg_value(args, "labels", []),
-        priority=get_arg_value(args, "priority"),
-        issue_type=get_arg_value(args, "type")
-    )
-    
-    issue = await service.create_issue(create_issue)
-    
-    return ToolResultFormatter.format_success(
-        "create_issue",
-        issue.__dict__,
-        FormattingOptions(content_type=None)
-    )
+    try:
+        from ...domain.types import CreateIssue
+        from dataclasses import asdict
+        
+        # Handle both dict and Pydantic model inputs
+        if hasattr(args, 'model_dump'):
+            # Pydantic model - convert to dict
+            args_dict = args.model_dump()
+        elif isinstance(args, dict):
+            args_dict = args
+        else:
+            # Try to convert to dict
+            args_dict = {k: getattr(args, k) for k in dir(args) if not k.startswith('_')}
+        
+        create_issue = CreateIssue(
+            title=get_arg_value(args_dict, "title"),
+            description=get_arg_value(args_dict, "description"),
+            milestone_id=get_arg_value(args_dict, "milestone_id"),
+            assignees=get_arg_value(args_dict, "assignees", []),
+            labels=get_arg_value(args_dict, "labels", []),
+            priority=get_arg_value(args_dict, "priority"),
+            issue_type=get_arg_value(args_dict, "type")
+        )
+        
+        issue = await service.create_issue(create_issue)
+        
+        # Convert dataclass to dict properly
+        issue_dict = asdict(issue) if hasattr(issue, '__dataclass_fields__') else issue.__dict__
+        
+        # Ensure we have a valid dict with all fields
+        if not issue_dict or not isinstance(issue_dict, dict):
+            raise ValueError(f"Failed to serialize issue: {type(issue)}")
+        
+        return ToolResultFormatter.format_success(
+            "create_issue",
+            issue_dict,
+            FormattingOptions(content_type=None)
+        )
+    except Exception as e:
+        from ...domain.mcp_types import MCPErrorCode, MCPErrorDetail, MCPErrorResponse
+        import traceback
+        error_msg = str(e)
+        error_type = type(e).__name__
+        # Get more details if available
+        if hasattr(e, 'args') and e.args:
+            error_details = f"{error_type}: {error_msg}"
+        else:
+            error_details = f"{error_type}: {error_msg}"
+        
+        return MCPErrorResponse(
+            version="1.0",
+            request_id="",
+            error=MCPErrorDetail(
+                code=MCPErrorCode.INTERNAL_ERROR.value,
+                message=f"Error creating issue: {error_details}"
+            )
+        )
 
 
 async def execute_create_milestone(
@@ -111,21 +149,76 @@ async def execute_create_milestone(
 ) -> MCPResponse:
     """Execute create_milestone tool."""
     from ...domain.types import CreateMilestone
+    from dataclasses import asdict
     
-    create_milestone = CreateMilestone(
-        title=get_arg_value(args, "title"),
-        description=get_arg_value(args, "description"),
-        due_date=get_arg_value(args, "due_date"),
-        status=None
-    )
-    
-    milestone = await service.create_milestone(create_milestone)
-    
-    return ToolResultFormatter.format_success(
-        "create_milestone",
-        milestone.__dict__,
-        FormattingOptions(content_type=None)
-    )
+    try:
+        # Handle both dict and Pydantic model inputs
+        if hasattr(args, 'model_dump'):
+            # Pydantic model - convert to dict
+            args_dict = args.model_dump()
+        elif isinstance(args, dict):
+            args_dict = args
+        else:
+            # Try to convert to dict
+            args_dict = {k: getattr(args, k) for k in dir(args) if not k.startswith('_')}
+        
+        create_milestone = CreateMilestone(
+            title=get_arg_value(args_dict, "title"),
+            description=get_arg_value(args_dict, "description"),
+            due_date=get_arg_value(args_dict, "due_date"),
+            status=None
+        )
+        
+        milestone = await service.create_milestone(create_milestone)
+        
+        # Convert dataclass to dict properly
+        if hasattr(milestone, '__dataclass_fields__'):
+            milestone_dict = asdict(milestone)
+        elif hasattr(milestone, '__dict__'):
+            milestone_dict = milestone.__dict__
+        else:
+            # Fallback: create dict from milestone attributes
+            milestone_dict = {
+                'id': getattr(milestone, 'id', None),
+                'title': getattr(milestone, 'title', None),
+                'description': getattr(milestone, 'description', None),
+                'due_date': getattr(milestone, 'due_date', None),
+                'status': str(getattr(milestone, 'status', None)) if hasattr(milestone, 'status') else None,
+                'created_at': getattr(milestone, 'created_at', None),
+                'updated_at': getattr(milestone, 'updated_at', None),
+                'url': getattr(milestone, 'url', None),
+                'number': getattr(milestone, 'number', None),
+                'progress': getattr(milestone, 'progress', None)
+            }
+        
+        # Ensure we have a valid dict with all fields
+        if not milestone_dict or not isinstance(milestone_dict, dict):
+            raise ValueError(f"Failed to serialize milestone: {type(milestone)}")
+        
+        return ToolResultFormatter.format_success(
+            "create_milestone",
+            milestone_dict,
+            FormattingOptions(content_type=None)
+        )
+    except Exception as e:
+        from ...domain.mcp_types import MCPErrorCode, MCPErrorDetail, MCPErrorResponse
+        import traceback
+        error_msg = str(e)
+        error_type = type(e).__name__
+        # Get more details if available
+        if hasattr(e, 'args') and e.args:
+            error_details = f"{error_type}: {error_msg}"
+        else:
+            error_details = f"{error_type}: {error_msg}"
+        
+        return MCPErrorResponse(
+            version="1.0",
+            request_id="",
+            error=MCPErrorDetail(
+                code=MCPErrorCode.INTERNAL_ERROR.value,
+                message=f"Error creating milestone: {error_details}"
+            )
+        )
 
 
 async def execute_get_issue(
@@ -133,11 +226,24 @@ async def execute_get_issue(
     args: Any
 ) -> MCPResponse:
     """Execute get_issue tool."""
-    issue = await service.get_issue(get_arg_value(args, "issue_id"))
+    from dataclasses import asdict
+    
+    # Handle both dict and Pydantic model inputs
+    if hasattr(args, 'model_dump'):
+        args_dict = args.model_dump()
+    elif isinstance(args, dict):
+        args_dict = args
+    else:
+        args_dict = {k: getattr(args, k) for k in dir(args) if not k.startswith('_')}
+    
+    issue = await service.get_issue(get_arg_value(args_dict, "issue_id"))
+    
+    # Convert dataclass to dict properly
+    issue_dict = asdict(issue) if hasattr(issue, '__dataclass_fields__') else issue.__dict__
     
     return ToolResultFormatter.format_success(
         "get_issue",
-        issue.__dict__,
+        issue_dict,
         FormattingOptions(content_type=None)
     )
 
@@ -148,9 +254,18 @@ async def execute_list_issues(
 ) -> MCPResponse:
     """Execute list_issues tool."""
     from ...domain.resource_types import ResourceStatus
+    from dataclasses import asdict
+    
+    # Handle both dict and Pydantic model inputs
+    if hasattr(args, 'model_dump'):
+        args_dict = args.model_dump()
+    elif isinstance(args, dict):
+        args_dict = args
+    else:
+        args_dict = {k: getattr(args, k) for k in dir(args) if not k.startswith('_')}
     
     options = {}
-    status_str = get_arg_value(args, "status")
+    status_str = get_arg_value(args_dict, "status")
     if status_str:
         status_map = {
             "open": ResourceStatus.ACTIVE,
@@ -160,9 +275,15 @@ async def execute_list_issues(
     
     issues = await service.list_issues(options)
     
+    # Convert dataclasses to dicts properly
+    issues_list = [
+        asdict(issue) if hasattr(issue, '__dataclass_fields__') else issue.__dict__
+        for issue in issues
+    ]
+    
     return ToolResultFormatter.format_success(
         "list_issues",
-        [issue.__dict__ for issue in issues],
+        issues_list,
         FormattingOptions(content_type=None)
     )
 
@@ -173,6 +294,7 @@ async def execute_list_milestones(
 ) -> MCPResponse:
     """Execute list_milestones tool."""
     from ...domain.resource_types import ResourceStatus
+    from dataclasses import asdict
     
     status_map = {
         "open": ResourceStatus.ACTIVE,
@@ -187,9 +309,15 @@ async def execute_list_milestones(
         direction=get_arg_value(args, "direction")
     )
     
+    # Convert dataclasses to dicts properly
+    milestones_list = [
+        asdict(milestone) if hasattr(milestone, '__dataclass_fields__') else milestone.__dict__
+        for milestone in milestones
+    ]
+    
     return ToolResultFormatter.format_success(
         "list_milestones",
-        [milestone.__dict__ for milestone in milestones],
+        milestones_list,
         FormattingOptions(content_type=None)
     )
 
@@ -199,13 +327,88 @@ async def execute_get_milestone_metrics(
     args: Any
 ) -> MCPResponse:
     """Execute get_milestone_metrics tool."""
-    metrics = await service.get_milestone_metrics(
-        get_arg_value(args, "milestone_id"),
+    try:
+        milestone_id = get_arg_value(args, "milestone_id")
+        include_issues = get_arg_value(args, "include_issues", False)
+        
+        metrics = await service.get_milestone_metrics(milestone_id, include_issues)
+        
+        # Ensure metrics is a dict
+        if not isinstance(metrics, dict):
+            from ...domain.mcp_types import MCPErrorCode, MCPErrorDetail, MCPErrorResponse
+            return MCPErrorResponse(
+                version="1.0",
+                request_id="",
+                error=MCPErrorDetail(
+                    code=MCPErrorCode.INTERNAL_ERROR.value,
+                    message=f"Expected dict but got {type(metrics)}: {metrics}"
+                )
+            )
+        
+        return ToolResultFormatter.format_success(
+            "get_milestone_metrics",
+            metrics,
+            FormattingOptions(content_type=None)
+        )
+    except Exception as e:
+        from ...domain.mcp_types import MCPErrorCode, MCPErrorDetail, MCPErrorResponse
+        return MCPErrorResponse(
+            version="1.0",
+            request_id="",
+            error=MCPErrorDetail(
+                code=MCPErrorCode.INTERNAL_ERROR.value,
+                message=f"Error getting milestone metrics: {str(e)}"
+            )
+        )
+
+
+async def execute_get_overdue_milestones(
+    service: ProjectManagementService,
+    args: Any
+) -> MCPResponse:
+    """Execute get_overdue_milestones tool."""
+    limit = get_arg_value(args, "limit", 10)
+    include_issues = get_arg_value(args, "include_issues", False)
+    
+    milestones = await service.get_overdue_milestones(limit, include_issues)
+    
+    return ToolResultFormatter.format_success(
+        "get_overdue_milestones",
+        milestones,
+        FormattingOptions(content_type=None)
+    )
+
+
+async def execute_get_upcoming_milestones(
+    service: ProjectManagementService,
+    args: Any
+) -> MCPResponse:
+    """Execute get_upcoming_milestones tool."""
+    days_ahead = get_arg_value(args, "days_ahead", 30)
+    limit = get_arg_value(args, "limit", 5)
+    include_issues = get_arg_value(args, "include_issues", False)
+    
+    milestones = await service.get_upcoming_milestones(days_ahead, limit, include_issues)
+    
+    return ToolResultFormatter.format_success(
+        "get_upcoming_milestones",
+        milestones,
+        FormattingOptions(content_type=None)
+    )
+
+
+async def execute_get_sprint_metrics(
+    service: ProjectManagementService,
+    args: Any
+) -> MCPResponse:
+    """Execute get_sprint_metrics tool."""
+    metrics = await service.get_sprint_metrics(
+        get_arg_value(args, "sprint_id"),
         get_arg_value(args, "include_issues", False)
     )
     
     return ToolResultFormatter.format_success(
-        "get_milestone_metrics",
+        "get_sprint_metrics",
         metrics,
         FormattingOptions(content_type=None)
     )
@@ -316,34 +519,75 @@ async def execute_update_issue(
 ) -> MCPResponse:
     """Execute update_issue tool."""
     from ...domain.resource_types import ResourceStatus
+    from dataclasses import asdict
+    
+    # Handle both dict and Pydantic model inputs
+    if hasattr(args, 'model_dump'):
+        args_dict = args.model_dump()
+    elif isinstance(args, dict):
+        args_dict = args
+    else:
+        args_dict = {k: getattr(args, k) for k in dir(args) if not k.startswith('_')}
     
     update_data = {}
-    title = get_arg_value(args, "title")
+    title = get_arg_value(args_dict, "title")
     if title is not None:
         update_data["title"] = title
-    description = get_arg_value(args, "description")
+    description = get_arg_value(args_dict, "description")
     if description is not None:
         update_data["description"] = description
-    status_str = get_arg_value(args, "status")
+    status_str = get_arg_value(args_dict, "status")
     if status_str is not None:
-        status_map = {"open": ResourceStatus.ACTIVE, "closed": ResourceStatus.CLOSED}
-        update_data["status"] = status_map.get(status_str, ResourceStatus.ACTIVE)
-    milestone_id = get_arg_value(args, "milestone_id")
+        # Normalize status string for comparison (lowercase, replace spaces/underscores)
+        normalized_status = status_str.lower().replace("_", " ").replace("-", " ").strip()
+        
+        status_map = {
+            "open": ResourceStatus.ACTIVE,
+            "closed": ResourceStatus.CLOSED,
+            "in progress": ResourceStatus.ACTIVE,  # GitHub doesn't support in_progress, map to ACTIVE
+            "in_progress": ResourceStatus.ACTIVE,
+            "in-progress": ResourceStatus.ACTIVE
+        }
+        update_data["status"] = status_map.get(normalized_status, ResourceStatus.ACTIVE)
+        
+        # If status is "in progress" (in any format), also add/ensure "in-progress" label exists
+        if normalized_status in ["in progress", "in_progress", "in-progress"]:
+            # Get current labels or initialize empty list
+            current_labels = get_arg_value(args_dict, "labels") or []
+            # Convert to list of strings if needed
+            if isinstance(current_labels, list):
+                label_names = [str(l).lower() for l in current_labels]
+            else:
+                label_names = []
+            
+            # Add in-progress label if not already present
+            if "in-progress" not in label_names and "in_progress" not in label_names:
+                if isinstance(current_labels, list):
+                    current_labels.append("in-progress")
+                else:
+                    current_labels = ["in-progress"]
+                update_data["labels"] = current_labels
+                # Also mark that we want to add this label
+                update_data["_add_in_progress_label"] = True
+    milestone_id = get_arg_value(args_dict, "milestone_id")
     if milestone_id is not None:
         update_data["milestone_id"] = milestone_id
-    assignees = get_arg_value(args, "assignees")
+    assignees = get_arg_value(args_dict, "assignees")
     if assignees is not None:
         update_data["assignees"] = assignees
-    labels = get_arg_value(args, "labels")
+    labels = get_arg_value(args_dict, "labels")
     if labels is not None:
         update_data["labels"] = labels
     
-    issue_id = get_arg_value(args, "issue_id")
+    issue_id = get_arg_value(args_dict, "issue_id")
     issue = await service.update_issue(issue_id, update_data)
+    
+    # Convert dataclass to dict properly
+    issue_dict = asdict(issue) if hasattr(issue, '__dataclass_fields__') else issue.__dict__
     
     return ToolResultFormatter.format_success(
         "update_issue",
-        issue.__dict__,
+        issue_dict,
         FormattingOptions(content_type=None)
     )
 
@@ -353,6 +597,8 @@ async def execute_update_milestone(
     args: Any
 ) -> MCPResponse:
     """Execute update_milestone tool."""
+    from dataclasses import asdict
+    
     # Convert Pydantic model to dict if needed
     if hasattr(args, 'model_dump'):
         update_dict = args.model_dump(exclude_unset=True)
@@ -362,9 +608,12 @@ async def execute_update_milestone(
         update_dict = {k: getattr(args, k) for k in dir(args) if not k.startswith('_')}
     milestone = await service.update_milestone(update_dict)
     
+    # Convert dataclass to dict properly
+    milestone_dict = asdict(milestone) if hasattr(milestone, '__dataclass_fields__') else milestone.__dict__
+    
     return ToolResultFormatter.format_success(
         "update_milestone",
-        milestone.__dict__,
+        milestone_dict,
         FormattingOptions(content_type=None)
     )
 
@@ -382,6 +631,677 @@ async def execute_delete_milestone(
         {"success": True, "milestone_id": milestone_id},
         FormattingOptions(content_type=None)
     )
+
+
+async def execute_create_roadmap(
+    service: ProjectManagementService,
+    args: Dict[str, Any]
+) -> MCPResponse:
+    """Execute create_roadmap tool."""
+    from dataclasses import asdict
+    
+    # Handle both dict and Pydantic model inputs
+    if hasattr(args, 'model_dump'):
+        # Pydantic model - convert to dict
+        args_dict = args.model_dump()
+    elif isinstance(args, dict):
+        args_dict = args
+    else:
+        # Try to convert to dict
+        args_dict = {k: getattr(args, k) for k in dir(args) if not k.startswith('_')}
+    
+    # Extract project data
+    project_data = get_arg_value(args_dict, "project")
+    
+    # Get owner from environment if not provided
+    import os
+    from ...env import GITHUB_OWNER
+    default_owner = GITHUB_OWNER
+    
+    # Convert project_data to dict if it's a Pydantic model
+    if hasattr(project_data, 'model_dump'):
+        project_data = project_data.model_dump()
+    elif not isinstance(project_data, dict):
+        # Try to convert to dict
+        project_data = {k: getattr(project_data, k) for k in dir(project_data) if not k.startswith('_')}
+    
+    if isinstance(project_data, dict):
+        project_title = project_data.get("title")
+        project_description = project_data.get("short_description")
+        project_visibility = project_data.get("visibility", "private")
+        project_owner = get_arg_value(args_dict, "owner") or default_owner
+    else:
+        # Handle Pydantic model
+        project_title = getattr(project_data, "title", None)
+        project_description = getattr(project_data, "short_description", None)
+        project_visibility = getattr(project_data, "visibility", "private")
+        project_owner = get_arg_value(args_dict, "owner") or default_owner
+    
+    if not project_title:
+        from ...domain.mcp_types import MCPErrorCode, MCPErrorDetail, MCPErrorResponse
+        return MCPErrorResponse(
+            version="1.0",
+            request_id="",
+            error=MCPErrorDetail(
+                code=MCPErrorCode.INVALID_PARAMS.value,
+                message="Project title is required"
+            )
+        )
+    
+    # Create the project first
+    from ...domain.types import CreateProject
+    create_project = CreateProject(
+        title=project_title,
+        owner=project_owner,
+        short_description=project_description,
+        visibility=project_visibility
+    )
+    
+    project = await service.create_project(create_project)
+    project_dict = asdict(project) if hasattr(project, '__dataclass_fields__') else project.__dict__
+    
+    # Extract milestones data
+    milestones_data = get_arg_value(args_dict, "milestones", [])
+    created_milestones = []
+    created_issues = []
+    
+    for milestone_data in milestones_data:
+        # Convert milestone_data to dict if it's a Pydantic model
+        if hasattr(milestone_data, 'model_dump'):
+            milestone_data = milestone_data.model_dump()
+        elif not isinstance(milestone_data, dict):
+            milestone_data = {k: getattr(milestone_data, k) for k in dir(milestone_data) if not k.startswith('_')}
+        
+        # Extract milestone info
+        if isinstance(milestone_data, dict):
+            milestone_info = milestone_data.get("milestone", {})
+            issues_data = milestone_data.get("issues", [])
+        else:
+            milestone_info = getattr(milestone_data, "milestone", None)
+            issues_data = getattr(milestone_data, "issues", [])
+            if milestone_info:
+                if hasattr(milestone_info, 'model_dump'):
+                    milestone_info = milestone_info.model_dump()
+                else:
+                    milestone_info = milestone_info.__dict__ if hasattr(milestone_info, '__dict__') else milestone_info
+        
+        # Convert milestone_info to dict if needed
+        if hasattr(milestone_info, 'model_dump'):
+            milestone_info = milestone_info.model_dump()
+        elif not isinstance(milestone_info, dict):
+            milestone_info = {k: getattr(milestone_info, k) for k in dir(milestone_info) if not k.startswith('_')}
+        
+        if isinstance(milestone_info, dict):
+            milestone_title = milestone_info.get("title")
+            milestone_description = milestone_info.get("description")
+            milestone_due_date = milestone_info.get("due_date")
+        else:
+            milestone_title = getattr(milestone_info, "title", None)
+            milestone_description = getattr(milestone_info, "description", None)
+            milestone_due_date = getattr(milestone_info, "due_date", None)
+        
+        if milestone_title:
+            # Create milestone
+            from ...domain.types import CreateMilestone
+            create_milestone = CreateMilestone(
+                title=milestone_title,
+                description=milestone_description or "",
+                due_date=milestone_due_date,
+                status=None
+            )
+            
+            milestone = await service.create_milestone(create_milestone)
+            milestone_dict = asdict(milestone) if hasattr(milestone, '__dataclass_fields__') else milestone.__dict__
+            created_milestones.append(milestone_dict)
+            
+            # Create issues for this milestone
+            for issue_data in issues_data:
+                # Convert issue_data to dict if it's a Pydantic model
+                if hasattr(issue_data, 'model_dump'):
+                    issue_data = issue_data.model_dump()
+                elif not isinstance(issue_data, dict):
+                    issue_data = {k: getattr(issue_data, k) for k in dir(issue_data) if not k.startswith('_')}
+                
+                if isinstance(issue_data, dict):
+                    issue_title = issue_data.get("title")
+                    issue_description = issue_data.get("description")
+                    issue_priority = issue_data.get("priority", "medium")
+                    issue_type = issue_data.get("type", "feature")
+                    issue_assignees = issue_data.get("assignees", [])
+                    issue_labels = issue_data.get("labels", [])
+                else:
+                    issue_title = getattr(issue_data, "title", None)
+                    issue_description = getattr(issue_data, "description", None)
+                    issue_priority = getattr(issue_data, "priority", "medium")
+                    issue_type = getattr(issue_data, "type", "feature")
+                    issue_assignees = getattr(issue_data, "assignees", [])
+                    issue_labels = getattr(issue_data, "labels", [])
+                
+                if issue_title:
+                    from ...domain.types import CreateIssue
+                    create_issue = CreateIssue(
+                        title=issue_title,
+                        description=issue_description or "",
+                        milestone_id=milestone.id,
+                        assignees=issue_assignees,
+                        labels=issue_labels,
+                        priority=issue_priority,
+                        issue_type=issue_type
+                    )
+                    
+                    issue = await service.create_issue(create_issue)
+                    issue_dict = asdict(issue) if hasattr(issue, '__dataclass_fields__') else issue.__dict__
+                    created_issues.append(issue_dict)
+    
+    result = {
+        "project": project_dict,
+        "milestones": created_milestones,
+        "issues": created_issues,
+        "summary": {
+            "project_created": True,
+            "milestones_created": len(created_milestones),
+            "issues_created": len(created_issues)
+        }
+    }
+    
+    return ToolResultFormatter.format_success(
+        "create_roadmap",
+        result,
+        FormattingOptions(content_type=None)
+    )
+
+
+async def execute_create_sprint(
+    service: ProjectManagementService,
+    args: Dict[str, Any]
+) -> MCPResponse:
+    """Execute create_sprint tool."""
+    from ...domain.types import CreateSprint
+    from dataclasses import asdict
+    
+    # Handle both dict and Pydantic model inputs
+    if hasattr(args, 'model_dump'):
+        args_dict = args.model_dump()
+    elif isinstance(args, dict):
+        args_dict = args
+    else:
+        args_dict = {k: getattr(args, k) for k in dir(args) if not k.startswith('_')}
+    
+    create_sprint = CreateSprint(
+        title=get_arg_value(args_dict, "title"),
+        description=get_arg_value(args_dict, "description"),
+        start_date=get_arg_value(args_dict, "start_date"),
+        end_date=get_arg_value(args_dict, "end_date"),
+        issues=get_arg_value(args_dict, "issue_ids", []),
+        status=None
+    )
+    
+    project_id = get_arg_value(args_dict, "project_id")
+    sprint = await service.create_sprint(create_sprint, project_id)
+    
+    sprint_dict = asdict(sprint) if hasattr(sprint, '__dataclass_fields__') else sprint.__dict__
+    
+    return ToolResultFormatter.format_success(
+        "create_sprint",
+        sprint_dict,
+        FormattingOptions(content_type=None)
+    )
+
+
+async def execute_plan_sprint(
+    service: ProjectManagementService,
+    args: Dict[str, Any]
+) -> MCPResponse:
+    """Execute plan_sprint tool."""
+    from dataclasses import asdict
+    
+    # Handle both dict and Pydantic model inputs
+    if hasattr(args, 'model_dump'):
+        args_dict = args.model_dump()
+    elif isinstance(args, dict):
+        args_dict = args
+    else:
+        args_dict = {k: getattr(args, k) for k in dir(args) if not k.startswith('_')}
+    
+    # Extract sprint data
+    sprint_data = args_dict.get("sprint", {})
+    if hasattr(sprint_data, 'model_dump'):
+        sprint_data = sprint_data.model_dump()
+    
+    issue_ids = args_dict.get("issue_ids", [])
+    project_id = args_dict.get("project_id")
+    
+    plan_data = {
+        "sprint": sprint_data,
+        "issue_ids": issue_ids,
+        "project_id": project_id
+    }
+    
+    sprint = await service.plan_sprint(plan_data)
+    
+    sprint_dict = asdict(sprint) if hasattr(sprint, '__dataclass_fields__') else sprint.__dict__
+    
+    return ToolResultFormatter.format_success(
+        "plan_sprint",
+        sprint_dict,
+        FormattingOptions(content_type=None)
+    )
+
+
+async def execute_list_sprints(
+    service: ProjectManagementService,
+    args: Any
+) -> MCPResponse:
+    """Execute list_sprints tool."""
+    from dataclasses import asdict
+    
+    status = get_arg_value(args, "status")
+    
+    sprints = await service.list_sprints(status)
+    
+    # Convert sprints to dictionaries
+    sprints_list = []
+    for sprint in sprints:
+        sprint_dict = asdict(sprint) if hasattr(sprint, '__dataclass_fields__') else sprint.__dict__
+        sprints_list.append(sprint_dict)
+    
+    return ToolResultFormatter.format_success(
+        "list_sprints",
+        sprints_list,
+        FormattingOptions(content_type=None)
+    )
+
+
+async def execute_add_issues_to_sprint(
+    service: ProjectManagementService,
+    args: Any
+) -> MCPResponse:
+    """Execute add_issues_to_sprint tool."""
+    sprint_id = get_arg_value(args, "sprint_id")
+    issue_ids = get_arg_value(args, "issue_ids", [])
+    
+    if not sprint_id:
+        from ...domain.mcp_types import MCPErrorCode, MCPErrorDetail, MCPErrorResponse
+        return MCPErrorResponse(
+            version="1.0",
+            request_id="",
+            error=MCPErrorDetail(
+                code=MCPErrorCode.INVALID_REQUEST.value,
+                message="Sprint ID is required"
+            )
+        )
+    
+    if not issue_ids:
+        from ...domain.mcp_types import MCPErrorCode, MCPErrorDetail, MCPErrorResponse
+        return MCPErrorResponse(
+            version="1.0",
+            request_id="",
+            error=MCPErrorDetail(
+                code=MCPErrorCode.INVALID_REQUEST.value,
+                message="At least one issue ID is required"
+            )
+        )
+    
+    # Add each issue to the sprint
+    results = []
+    for issue_id in issue_ids:
+        try:
+            sprint = await service.add_issue_to_sprint(sprint_id, issue_id)
+            results.append({
+                "issue_id": issue_id,
+                "status": "success",
+                "sprint_id": sprint.id if hasattr(sprint, 'id') else sprint_id
+            })
+        except Exception as e:
+            results.append({
+                "issue_id": issue_id,
+                "status": "error",
+                "error": str(e)
+            })
+    
+    return ToolResultFormatter.format_success(
+        "add_issues_to_sprint",
+        {
+            "sprint_id": sprint_id,
+            "results": results,
+            "total_issues": len(issue_ids),
+            "successful": len([r for r in results if r.get("status") == "success"]),
+            "failed": len([r for r in results if r.get("status") == "error"])
+        },
+        FormattingOptions(content_type=None)
+    )
+
+
+async def execute_set_field_value(
+    service: ProjectManagementService,
+    args: Any
+) -> MCPResponse:
+    """Execute set_field_value tool."""
+    from dataclasses import asdict
+    
+    # Handle both dict and Pydantic model inputs
+    if hasattr(args, 'model_dump'):
+        args_dict = args.model_dump()
+    elif isinstance(args, dict):
+        args_dict = args
+    else:
+        args_dict = {k: getattr(args, k) for k in dir(args) if not k.startswith('_')}
+    
+    project_id = get_arg_value(args_dict, "project_id")
+    item_id = get_arg_value(args_dict, "item_id")
+    field_id = get_arg_value(args_dict, "field_id")
+    value = get_arg_value(args_dict, "value")
+    
+    if not project_id or not item_id or not field_id:
+        from ...domain.mcp_types import MCPErrorCode, MCPErrorDetail, MCPErrorResponse
+        return MCPErrorResponse(
+            version="1.0",
+            request_id="",
+            error=MCPErrorDetail(
+                code=MCPErrorCode.VALIDATION_ERROR.value,
+                message="project_id, item_id, and field_id are required"
+            )
+        )
+    
+    success = await service.set_project_item_field_value(project_id, item_id, field_id, value)
+    
+    return ToolResultFormatter.format_success(
+        "set_field_value",
+        {
+            "success": success,
+            "project_id": project_id,
+            "item_id": item_id,
+            "field_id": field_id,
+            "value": value
+        },
+        FormattingOptions(content_type=None)
+    )
+
+
+async def execute_add_project_item(
+    service: ProjectManagementService,
+    args: Any
+) -> MCPResponse:
+    """Execute add_project_item tool."""
+    from ...domain.mcp_types import MCPErrorCode, MCPErrorDetail, MCPErrorResponse
+    
+    # Handle both dict and Pydantic model inputs
+    if hasattr(args, 'model_dump'):
+        args_dict = args.model_dump()
+    elif isinstance(args, dict):
+        args_dict = args
+    else:
+        args_dict = {k: getattr(args, k) for k in dir(args) if not k.startswith('_')}
+    
+    project_id = get_arg_value(args_dict, "project_id")
+    content_id = get_arg_value(args_dict, "content_id")
+    content_type = get_arg_value(args_dict, "content_type")
+    
+    if not project_id or not content_id or not content_type:
+        return MCPErrorResponse(
+            version="1.0",
+            request_id="",
+            error=MCPErrorDetail(
+                code=MCPErrorCode.VALIDATION_ERROR.value,
+                message="project_id, content_id, and content_type are required"
+            )
+        )
+    
+    try:
+        project_repo = service.get_repository_factory().create_project_repository()
+        
+        # If content_type is "Issue" and content_id is a number, we need to get the node ID
+        if content_type.lower() == "issue":
+            try:
+                # Try to parse as integer (issue number)
+                issue_number = int(content_id)
+                # Get issue node ID
+                issue_node_query = """
+                query($owner: String!, $repo: String!, $number: Int!) {
+                  repository(owner: $owner, name: $repo) {
+                    issue(number: $number) {
+                      id
+                    }
+                  }
+                }
+                """
+                
+                issue_node_response = await project_repo.graphql(issue_node_query, {
+                    "owner": project_repo.owner,
+                    "repo": project_repo.repository,
+                    "number": issue_number
+                })
+                
+                issue_node_id = issue_node_response.get("repository", {}).get("issue", {}).get("id")
+                if not issue_node_id:
+                    return MCPErrorResponse(
+                        version="1.0",
+                        request_id="",
+                        error=MCPErrorDetail(
+                            code=MCPErrorCode.RESOURCE_NOT_FOUND.value,
+                            message=f"Issue {content_id} not found"
+                        )
+                    )
+                
+                content_id = issue_node_id
+            except ValueError:
+                # content_id is already a node ID, use it as is
+                pass
+        
+        # Add item to project
+        add_item_mutation = """
+        mutation($projectId: ID!, $contentId: ID!) {
+          addProjectV2ItemById(input: {
+            projectId: $projectId
+            contentId: $contentId
+          }) {
+            item {
+              id
+            }
+          }
+        }
+        """
+        
+        response = await project_repo.graphql(add_item_mutation, {
+            "projectId": project_id,
+            "contentId": content_id
+        })
+        
+        item = response.get("addProjectV2ItemById", {}).get("item", {})
+        if not item:
+            return MCPErrorResponse(
+                version="1.0",
+                request_id="",
+                error=MCPErrorDetail(
+                    code=MCPErrorCode.INTERNAL_ERROR.value,
+                    message="Failed to add item to project"
+                )
+            )
+        
+        item_id = item.get("id")
+        
+        # If this is an issue, try to set priority and type fields if they exist
+        if content_type.lower() == "issue":
+            try:
+                # Get the issue to check if it has priority/type stored
+                issue_number = int(content_id) if content_id.isdigit() else None
+                if issue_number:
+                    # Try to get issue details - but priority/type aren't stored in GitHub issues
+                    # They need to be set as project fields
+                    # For now, we'll try to set them if provided in the args
+                    priority = get_arg_value(args_dict, "priority")
+                    issue_type = get_arg_value(args_dict, "type")
+                    
+                    # Try to set Priority field if provided
+                    if priority:
+                        priority_field = await project_repo.get_field_by_name(project_id, "Priority")
+                        if priority_field:
+                            try:
+                                await project_repo.set_field_value(
+                                    project_id,
+                                    item_id,
+                                    priority_field["id"],
+                                    priority
+                                )
+                            except Exception as e:
+                                # Log but don't fail
+                                project_repo._logger.debug(f"Could not set Priority field: {str(e)}")
+                    
+                    # Try to set Type field if provided
+                    if issue_type:
+                        type_field = await project_repo.get_field_by_name(project_id, "Type")
+                        if not type_field:
+                            # Try "Issue Type" as alternative name
+                            type_field = await project_repo.get_field_by_name(project_id, "Issue Type")
+                        if type_field:
+                            try:
+                                await project_repo.set_field_value(
+                                    project_id,
+                                    item_id,
+                                    type_field["id"],
+                                    issue_type
+                                )
+                            except Exception as e:
+                                # Log but don't fail
+                                project_repo._logger.debug(f"Could not set Type field: {str(e)}")
+            except Exception as e:
+                # Log but don't fail the operation
+                project_repo._logger.debug(f"Could not set priority/type fields: {str(e)}")
+        
+        return ToolResultFormatter.format_success(
+            "add_project_item",
+            {
+                "success": True,
+                "project_id": project_id,
+                "item_id": item_id,
+                "content_id": content_id,
+                "content_type": content_type
+            },
+            FormattingOptions(content_type=None)
+        )
+    except Exception as e:
+        return MCPErrorResponse(
+            version="1.0",
+            request_id="",
+            error=MCPErrorDetail(
+                code=MCPErrorCode.INTERNAL_ERROR.value,
+                message=f"Error adding item to project: {str(e)}"
+            )
+        )
+
+
+async def execute_create_project_field(
+    service: ProjectManagementService,
+    args: Any
+) -> MCPResponse:
+    """Execute create_project_field tool."""
+    from ...domain.mcp_types import MCPErrorCode, MCPErrorDetail, MCPErrorResponse
+    from dataclasses import asdict
+    
+    # Handle both dict and Pydantic model inputs
+    if hasattr(args, 'model_dump'):
+        args_dict = args.model_dump()
+    elif isinstance(args, dict):
+        args_dict = args
+    else:
+        args_dict = {k: getattr(args, k) for k in dir(args) if not k.startswith('_')}
+    
+    project_id = get_arg_value(args_dict, "project_id")
+    name = get_arg_value(args_dict, "name")
+    field_type = get_arg_value(args_dict, "type")
+    options = get_arg_value(args_dict, "options")
+    description = get_arg_value(args_dict, "description")
+    required = get_arg_value(args_dict, "required")
+    
+    if not project_id or not name or not field_type:
+        return MCPErrorResponse(
+            version="1.0",
+            request_id="",
+            error=MCPErrorDetail(
+                code=MCPErrorCode.VALIDATION_ERROR.value,
+                message="project_id, name, and type are required"
+            )
+        )
+    
+    try:
+        project_repo = service.get_repository_factory().create_project_repository()
+        
+        field_data = {
+            "name": name,
+            "type": field_type
+        }
+        
+        # Handle options - might come as string or list
+        if options:
+            if isinstance(options, str):
+                # Try to parse as JSON
+                import json
+                try:
+                    options = json.loads(options)
+                except json.JSONDecodeError:
+                    # If not JSON, treat as single option
+                    options = [{"name": options}]
+            elif isinstance(options, list):
+                # Ensure all items are dicts
+                options = [opt if isinstance(opt, dict) else {"name": str(opt)} for opt in options]
+            field_data["options"] = options
+        elif field_type.lower() == "single_select":
+            # For single_select fields, GitHub requires at least one option
+            # Add default options based on field name
+            if name.lower() == "priority":
+                field_data["options"] = [
+                    {"name": "Low", "color": "GRAY", "description": ""},
+                    {"name": "Medium", "color": "YELLOW", "description": ""},
+                    {"name": "High", "color": "ORANGE", "description": ""},
+                    {"name": "Critical", "color": "RED", "description": ""}
+                ]
+            elif name.lower() == "type":
+                field_data["options"] = [
+                    {"name": "feature", "color": "BLUE", "description": ""},
+                    {"name": "bug", "color": "RED", "description": ""},
+                    {"name": "enhancement", "color": "GREEN", "description": ""},
+                    {"name": "documentation", "color": "PURPLE", "description": ""}
+                ]
+            else:
+                # Generic default option
+                field_data["options"] = [{"name": "Option 1", "color": "GRAY", "description": ""}]
+        if description:
+            field_data["description"] = description
+        if required is not None:
+            field_data["required"] = required
+        
+        field = await project_repo.create_field(project_id, field_data)
+        
+        # Convert dataclass to dict properly
+        if hasattr(field, '__dataclass_fields__'):
+            field_dict = asdict(field)
+            # Convert FieldOption objects to dicts if they exist
+            if 'options' in field_dict and field_dict['options']:
+                field_dict['options'] = [
+                    {'id': opt.id, 'name': opt.name, 'color': opt.color, 'description': opt.description}
+                    if hasattr(opt, 'id') else {'name': str(opt)}
+                    for opt in field_dict['options']
+                ]
+        else:
+            field_dict = field.__dict__ if hasattr(field, '__dict__') else {}
+        
+        return ToolResultFormatter.format_success(
+            "create_project_field",
+            field_dict,
+            FormattingOptions(content_type=None)
+        )
+    except Exception as e:
+        import traceback
+        error_traceback = traceback.format_exc()
+        error_msg = f"Error creating project field: {str(e)}\nTraceback:\n{error_traceback}"
+        return MCPErrorResponse(
+            version="1.0",
+            request_id="",
+            error=MCPErrorDetail(
+                code=MCPErrorCode.INTERNAL_ERROR.value,
+                message=error_msg
+            )
+        )
 
 
 # Tool handler registry
@@ -403,8 +1323,29 @@ TOOL_HANDLERS: Dict[str, callable] = {
     "create_milestone": execute_create_milestone,
     "list_milestones": execute_list_milestones,
     "get_milestone_metrics": execute_get_milestone_metrics,
+    "get_overdue_milestones": execute_get_overdue_milestones,
+    "get_upcoming_milestones": execute_get_upcoming_milestones,
     "update_milestone": execute_update_milestone,
     "delete_milestone": execute_delete_milestone,
+    
+    # Roadmap tools
+    "create_roadmap": execute_create_roadmap,
+    
+    # Sprint tools
+    "create_sprint": execute_create_sprint,
+    "plan_sprint": execute_plan_sprint,
+    "get_sprint_metrics": execute_get_sprint_metrics,
+    "list_sprints": execute_list_sprints,
+    "add_issues_to_sprint": execute_add_issues_to_sprint,
+    
+    # Field value tools
+    "set_field_value": execute_set_field_value,
+    
+    # Project item tools
+    "add_project_item": execute_add_project_item,
+    
+    # Project field tools
+    "create_project_field": execute_create_project_field,
 }
 
 

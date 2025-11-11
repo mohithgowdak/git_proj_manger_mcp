@@ -280,6 +280,8 @@ class AddProjectItemArgs(BaseModel):
     project_id: str = Field(..., min_length=1, description="Project ID")
     content_id: str = Field(..., min_length=1, description="Content ID")
     content_type: str = Field(..., description="Content type")
+    priority: Optional[str] = Field(None, description="Priority (optional, will be set on project item if field exists)")
+    type: Optional[str] = Field(None, description="Issue type (optional, will be set on project item if field exists)")
 
 
 class RemoveProjectItemArgs(BaseModel):

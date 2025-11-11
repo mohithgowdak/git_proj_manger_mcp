@@ -14,12 +14,46 @@ class GitHubMilestoneRepository(BaseGitHubRepository):
     
     async def create(self, data: CreateMilestone) -> Milestone:
         """Create a milestone."""
-        milestone = self.repo.create_milestone(
-            title=data.title,
-            description=data.description,
-            due_on=data.due_date if data.due_date else None,
-            state='open' if data.status != ResourceStatus.CLOSED else 'closed'
-        )
+        # Validate and convert due_date format
+        due_on = None
+        if data.due_date:
+            try:
+                from datetime import datetime
+                # Try to parse the date string
+                if len(data.due_date) == 4 and data.due_date.isdigit():
+                    # If it's just a year like "2025", use end of year
+                    due_on = datetime(int(data.due_date), 12, 31)
+                elif len(data.due_date) >= 10:
+                    # Try to parse ISO format date string
+                    try:
+                        due_on = datetime.fromisoformat(data.due_date.replace('Z', '+00:00'))
+                    except ValueError:
+                        # Try other common formats
+                        for fmt in ['%Y-%m-%d', '%Y/%m/%d', '%m/%d/%Y']:
+                            try:
+                                due_on = datetime.strptime(data.due_date[:10], fmt)
+                                break
+                            except ValueError:
+                                continue
+                else:
+                    raise ValueError(f"Invalid date format: {data.due_date}")
+                
+                if due_on is None:
+                    raise ValueError(f"Could not parse due_date: {data.due_date}")
+            except Exception as e:
+                raise ValueError(f"Invalid due_date format '{data.due_date}': {str(e)}. Expected ISO format (YYYY-MM-DD) or year (YYYY).")
+        
+        try:
+            milestone = self.repo.create_milestone(
+                title=data.title,
+                description=data.description,
+                due_on=due_on,
+                state='open' if data.status != ResourceStatus.CLOSED else 'closed'
+            )
+        except Exception as e:
+            error_msg = str(e)
+            error_type = type(e).__name__
+            raise ValueError(f"GitHub API error creating milestone: {error_type} - {error_msg}")
         
         return self._convert_milestone(milestone)
     
@@ -65,7 +99,7 @@ class GitHubMilestoneRepository(BaseGitHubRepository):
     async def get_issues(self, id: MilestoneId) -> List:
         """Get issues for milestone."""
         from .github_issue_repository import GitHubIssueRepository
-        issue_repo = GitHubIssueRepository(self.github, self.repo, self.config)
+        issue_repo = GitHubIssueRepository(self.github, self.repo, self._config)
         return await issue_repo.find_by_milestone(id)
     
     def _convert_milestone(self, milestone) -> Milestone:

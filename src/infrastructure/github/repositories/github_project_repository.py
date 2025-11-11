@@ -5,7 +5,7 @@ from github import Github
 from github.Repository import Repository
 from ..github_config import GitHubConfig
 from .base_repository import BaseGitHubRepository
-from ....domain.types import Project, CreateProject, ProjectId, ProjectView, CustomField
+from ....domain.types import Project, CreateProject, ProjectId, ProjectView, CustomField, IssueId, FieldOption
 from ....domain.resource_types import ResourceType, ResourceStatus
 
 
@@ -267,9 +267,20 @@ class GitHubProjectRepository(BaseGitHubRepository):
         mutation($input: CreateProjectV2FieldInput!) {
           createProjectV2Field(input: $input) {
             projectV2Field {
-              id
-              name
-              dataType
+              ... on ProjectV2Field {
+                id
+                name
+                dataType
+              }
+              ... on ProjectV2SingleSelectField {
+                id
+                name
+                dataType
+                options {
+                  id
+                  name
+                }
+              }
             }
           }
         }
@@ -283,18 +294,39 @@ class GitHubProjectRepository(BaseGitHubRepository):
         
         if "options" in field and field["options"]:
             input_data["singleSelectOptions"] = [
-                {"name": opt["name"]} for opt in field["options"]
+                {
+                    "name": opt["name"],
+                    "color": opt.get("color", "GRAY"),
+                    "description": opt.get("description", "")
+                } for opt in field["options"]
             ]
         
         response = await self.graphql(mutation, {"input": input_data})
         field_data = response.get("createProjectV2Field", {}).get("projectV2Field", {})
         
-        from ....domain.types import CustomField as DomainCustomField
-        return DomainCustomField(
+        # Convert options to FieldOption objects if they exist
+        # First check if options came from the response (for single_select fields)
+        options = None
+        if field_data.get("options"):
+            # Options from the GraphQL response
+            options = [
+                FieldOption(name=opt.get("name", ""), id=opt.get("id"))
+                for opt in field_data.get("options", [])
+            ]
+        elif field.get("options"):
+            # Options from the input field data
+            options = [
+                FieldOption(name=opt["name"], id=opt.get("id")) 
+                if isinstance(opt, dict) 
+                else FieldOption(name=str(opt))
+                for opt in field["options"]
+            ]
+        
+        return CustomField(
             id=field_data["id"],
             name=field_data["name"],
             type=field["type"],
-            options=field.get("options"),
+            options=options,
             description=field.get("description"),
             required=field.get("required", False)
         )
@@ -490,4 +522,231 @@ class GitHubProjectRepository(BaseGitHubRepository):
             visibility=create_data.visibility if create_data else "private",
             version=None
         )
+    
+    async def get_project_item_id_for_issue(self, project_id: ProjectId, issue_id: IssueId) -> Optional[str]:
+        """Get project item ID for an issue."""
+        try:
+            # Get issue node ID
+            issue_node_query = """
+            query($owner: String!, $repo: String!, $number: Int!) {
+              repository(owner: $owner, name: $repo) {
+                issue(number: $number) {
+                  id
+                }
+              }
+            }
+            """
+            
+            issue_node_response = await self.graphql(issue_node_query, {
+                "owner": self._config.owner,
+                "repo": self._config.repo,
+                "number": int(issue_id)
+            })
+            
+            issue_node_id = issue_node_response.get("repository", {}).get("issue", {}).get("id")
+            if not issue_node_id:
+                return None
+            
+            # Query for project items
+            items_query = """
+            query($projectId: ID!) {
+              node(id: $projectId) {
+                ... on ProjectV2 {
+                  items(first: 100) {
+                    nodes {
+                      id
+                      content {
+                        ... on Issue {
+                          id
+                          number
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+            """
+            
+            items_response = await self.graphql(items_query, {"projectId": project_id})
+            items = items_response.get("node", {}).get("items", {}).get("nodes", [])
+            
+            for item in items:
+                content = item.get("content", {})
+                if content.get("id") == issue_node_id:
+                    return item.get("id")
+            
+            return None
+        except Exception as e:
+            self._logger.error(f"Error getting project item ID for issue {issue_id}: {str(e)}")
+            return None
+    
+    async def get_field_by_name(self, project_id: ProjectId, field_name: str) -> Optional[Dict[str, Any]]:
+        """Get field by name from a project."""
+        query = """
+        query($projectId: ID!) {
+          node(id: $projectId) {
+            ... on ProjectV2 {
+              fields(first: 100) {
+                nodes {
+                  ... on ProjectV2Field {
+                    id
+                    name
+                    dataType
+                  }
+                  ... on ProjectV2SingleSelectField {
+                    id
+                    name
+                    dataType
+                    options {
+                      id
+                      name
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+        """
+        
+        try:
+            response = await self.graphql(query, {"projectId": project_id})
+            fields = response.get("node", {}).get("fields", {}).get("nodes", [])
+            
+            for field in fields:
+                if field.get("name", "").lower() == field_name.lower():
+                    return field
+            
+            return None
+        except Exception as e:
+            self._logger.error(f"Error getting field {field_name}: {str(e)}")
+            return None
+    
+    async def set_field_value(
+        self, 
+        project_id: ProjectId, 
+        item_id: str, 
+        field_id: str, 
+        value: Any
+    ) -> bool:
+        """Set field value for a project item."""
+        # Determine field type and format value accordingly
+        field = await self.get_field_by_id(project_id, field_id)
+        if not field:
+            raise ValueError(f"Field {field_id} not found in project")
+        
+        field_type = field.get("dataType", "").lower()
+        
+        # Build value based on field type
+        value_input = {}
+        
+        if field_type == "single_select":
+            # Value should be the option ID or name
+            if isinstance(value, str):
+                # Try to find option by name first
+                options = field.get("options", [])
+                option_id = None
+                # Normalize the value for comparison (lowercase, replace underscores with spaces)
+                normalized_value = value.lower().replace("_", " ").strip()
+                
+                for opt in options:
+                    # Normalize option name for comparison
+                    option_name = opt.get("name", "").lower().replace("_", " ").strip()
+                    if option_name == normalized_value:
+                        option_id = opt.get("id")
+                        break
+                
+                if option_id:
+                    value_input["singleSelectOptionId"] = option_id
+                else:
+                    # Assume it's already an ID
+                    value_input["singleSelectOptionId"] = value
+            else:
+                value_input["singleSelectOptionId"] = str(value)
+        elif field_type == "text":
+            value_input["text"] = str(value)
+        elif field_type == "number":
+            value_input["number"] = float(value) if isinstance(value, str) else value
+        elif field_type == "date":
+            value_input["date"] = str(value)
+        elif field_type == "iteration":
+            value_input["iterationId"] = str(value)
+        else:
+            raise ValueError(f"Unsupported field type: {field_type}")
+        
+        mutation = """
+        mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $value: ProjectV2FieldValue!) {
+          updateProjectV2ItemFieldValue(input: {
+            projectId: $projectId
+            itemId: $itemId
+            fieldId: $fieldId
+            value: $value
+          }) {
+            projectV2Item {
+              id
+            }
+          }
+        }
+        """
+        
+        try:
+            response = await self.graphql(mutation, {
+                "projectId": project_id,
+                "itemId": item_id,
+                "fieldId": field_id,
+                "value": value_input
+            })
+            
+            if response.get("errors"):
+                error_msg = str(response.get("errors"))
+                raise Exception(f"GraphQL errors: {error_msg}")
+            
+            updated_item = response.get("updateProjectV2ItemFieldValue", {}).get("projectV2Item")
+            return updated_item is not None
+        except Exception as e:
+            self._logger.error(f"Error setting field value: {str(e)}")
+            raise
+    
+    async def get_field_by_id(self, project_id: ProjectId, field_id: str) -> Optional[Dict[str, Any]]:
+        """Get field by ID from a project."""
+        query = """
+        query($projectId: ID!) {
+          node(id: $projectId) {
+            ... on ProjectV2 {
+              fields(first: 100) {
+                nodes {
+                  ... on ProjectV2Field {
+                    id
+                    name
+                    dataType
+                  }
+                  ... on ProjectV2SingleSelectField {
+                    id
+                    name
+                    dataType
+                    options {
+                      id
+                      name
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+        """
+        
+        try:
+            response = await self.graphql(query, {"projectId": project_id})
+            fields = response.get("node", {}).get("fields", {}).get("nodes", [])
+            
+            for field in fields:
+                if field.get("id") == field_id:
+                    return field
+            
+            return None
+        except Exception as e:
+            self._logger.error(f"Error getting field {field_id}: {str(e)}")
+            return None
 
