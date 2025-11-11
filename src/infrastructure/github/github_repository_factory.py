@@ -37,9 +37,37 @@ class GitHubRepositoryFactory:
         self.config = GitHubConfig.create(owner, repo, token)
         self.error_handler = GitHubErrorHandler()
         
+        # Validate token format
+        if not token or token.strip() == "":
+            raise ValueError(
+                "GITHUB_TOKEN is empty or not set. Please provide a valid GitHub Personal Access Token."
+            )
+        
+        if not token.startswith("ghp_") and not token.startswith("github_pat_"):
+            raise ValueError(
+                f"Invalid GitHub token format. Token should start with 'ghp_' (classic) or 'github_pat_' (fine-grained). "
+                f"Current token starts with: {token[:10]}..."
+            )
+        
         # Initialize PyGithub client
-        self.github = Github(token)
-        self.repo = self.github.get_repo(f"{owner}/{repo}")
+        try:
+            self.github = Github(token)
+            self.repo = self.github.get_repo(f"{owner}/{repo}")
+        except Exception as e:
+            # Provide helpful error message
+            error_msg = str(e)
+            if "401" in error_msg or "Bad credentials" in error_msg:
+                raise ValueError(
+                    f"GitHub authentication failed (401 Bad credentials).\n"
+                    f"Please check:\n"
+                    f"1. Your token is valid and not expired\n"
+                    f"2. Token has 'repo' and 'project' permissions\n"
+                    f"3. Token format is correct (starts with 'ghp_' or 'github_pat_')\n"
+                    f"4. Owner '{owner}' and repo '{repo}' are correct\n"
+                    f"5. You have access to the repository\n\n"
+                    f"To create a new token: https://github.com/settings/tokens"
+                ) from e
+            raise
         
         if options is None:
             options = RepositoryFactoryOptions()
