@@ -65,16 +65,38 @@ class ToolValidator:
                     log_debug(f"Options is a string, attempting to parse: {options}")
                     try:
                         # Try JSON parsing first
-                        args["options"] = json.loads(options)
+                        parsed_options = json.loads(options)
+                        args["options"] = parsed_options
                         log_debug(f"Parsed options as JSON successfully")
                     except json.JSONDecodeError:
                         # Try ast.literal_eval for Python list syntax
                         try:
                             import ast
-                            args["options"] = ast.literal_eval(options)
+                            parsed_options = ast.literal_eval(options)
+                            args["options"] = parsed_options
                             log_debug(f"Parsed options using ast.literal_eval successfully")
                         except (ValueError, SyntaxError):
-                            log_debug(f"Could not parse options, leaving as string")
+                            # Try to parse as a simple list of strings
+                            try:
+                                # Check if it contains " or " or " and " - common separator in natural language
+                                if " or " in options.lower() or " and " in options.lower():
+                                    # Split by " or " or " and "
+                                    separator = " or " if " or " in options.lower() else " and "
+                                    items = [item.strip().strip('"').strip("'") for item in options.split(separator)]
+                                    args["options"] = [{"name": item} for item in items if item]
+                                    log_debug(f"Parsed options with 'or/and' separator: {args['options']}")
+                                else:
+                                    # Remove brackets and quotes, split by comma
+                                    cleaned = options.strip().strip('[]').strip()
+                                    if cleaned:
+                                        # Split by comma and clean each item
+                                        items = [item.strip().strip('"').strip("'") for item in cleaned.split(',')]
+                                        args["options"] = [{"name": item} for item in items if item]
+                                        log_debug(f"Parsed options as simple list: {args['options']}")
+                                    else:
+                                        log_debug(f"Empty options string, leaving as is")
+                            except Exception:
+                                log_debug(f"Could not parse options, leaving as string")
             
             # For create_roadmap, handle nested structures BEFORE Pydantic validation
             # This is critical because Pydantic will fail if it sees string representations

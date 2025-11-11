@@ -1234,37 +1234,47 @@ async def execute_create_project_field(
         # Handle options - might come as string or list
         if options:
             if isinstance(options, str):
-                # Try to parse as JSON
+                # Try to parse as JSON first
                 import json
                 try:
                     options = json.loads(options)
                 except json.JSONDecodeError:
-                    # If not JSON, treat as single option
-                    options = [{"name": options}]
-            elif isinstance(options, list):
-                # Ensure all items are dicts
-                options = [opt if isinstance(opt, dict) else {"name": str(opt)} for opt in options]
-            field_data["options"] = options
+                    # If not JSON, try ast.literal_eval for Python list syntax
+                    try:
+                        import ast
+                        options = ast.literal_eval(options)
+                    except (ValueError, SyntaxError):
+                        # If that fails, treat as single option
+                        options = [{"name": options}]
+            
+            # Ensure options is a list
+            if not isinstance(options, list):
+                options = [options]
+            
+            # Ensure all items are dicts with required fields
+            processed_options = []
+            for opt in options:
+                if isinstance(opt, dict):
+                    # Ensure color and description are present
+                    processed_opt = {
+                        "name": opt.get("name", str(opt)),
+                        "color": opt.get("color", "GRAY"),
+                        "description": opt.get("description", "")
+                    }
+                    processed_options.append(processed_opt)
+                else:
+                    # Convert to dict
+                    processed_options.append({
+                        "name": str(opt),
+                        "color": "GRAY",
+                        "description": ""
+                    })
+            
+            field_data["options"] = processed_options
         elif field_type.lower() == "single_select":
             # For single_select fields, GitHub requires at least one option
-            # Add default options based on field name
-            if name.lower() == "priority":
-                field_data["options"] = [
-                    {"name": "Low", "color": "GRAY", "description": ""},
-                    {"name": "Medium", "color": "YELLOW", "description": ""},
-                    {"name": "High", "color": "ORANGE", "description": ""},
-                    {"name": "Critical", "color": "RED", "description": ""}
-                ]
-            elif name.lower() == "type":
-                field_data["options"] = [
-                    {"name": "feature", "color": "BLUE", "description": ""},
-                    {"name": "bug", "color": "RED", "description": ""},
-                    {"name": "enhancement", "color": "GREEN", "description": ""},
-                    {"name": "documentation", "color": "PURPLE", "description": ""}
-                ]
-            else:
-                # Generic default option
-                field_data["options"] = [{"name": "Option 1", "color": "GRAY", "description": ""}]
+            # Add a generic default option if none provided
+            field_data["options"] = [{"name": "Option 1", "color": "GRAY", "description": ""}]
         if description:
             field_data["description"] = description
         if required is not None:
@@ -1294,6 +1304,341 @@ async def execute_create_project_field(
         import traceback
         error_traceback = traceback.format_exc()
         error_msg = f"Error creating project field: {str(e)}\nTraceback:\n{error_traceback}"
+        return MCPErrorResponse(
+            version="1.0",
+            request_id="",
+            error=MCPErrorDetail(
+                code=MCPErrorCode.INTERNAL_ERROR.value,
+                message=error_msg
+            )
+        )
+
+
+async def execute_create_label(
+    service: ProjectManagementService,
+    args: Any
+) -> MCPResponse:
+    """Execute create_label tool."""
+    from ...domain.mcp_types import MCPErrorCode, MCPErrorDetail, MCPErrorResponse
+    
+    # Handle both dict and Pydantic model inputs
+    if hasattr(args, 'model_dump'):
+        args_dict = args.model_dump()
+    elif isinstance(args, dict):
+        args_dict = args
+    else:
+        args_dict = {k: getattr(args, k) for k in dir(args) if not k.startswith('_')}
+    
+    name = get_arg_value(args_dict, "name")
+    color = get_arg_value(args_dict, "color")
+    description = get_arg_value(args_dict, "description")
+    
+    if not name or not color:
+        return MCPErrorResponse(
+            version="1.0",
+            request_id="",
+            error=MCPErrorDetail(
+                code=MCPErrorCode.VALIDATION_ERROR.value,
+                message="name and color are required"
+            )
+        )
+    
+    try:
+        # Get the repository to create labels
+        issue_repo = service.get_repository_factory().create_issue_repository()
+        repo = issue_repo.repo
+        
+        # Convert color name to hex if needed
+        color_map = {
+            "red": "d73a4a",
+            "blue": "0366d6",
+            "green": "28a745",
+            "purple": "6f42c1",
+            "yellow": "ffc107",
+            "orange": "fd7e14",
+            "pink": "e83e8c",
+            "gray": "6c757d",
+            "grey": "6c757d"
+        }
+        
+        # If color is a name, convert to hex
+        if color.lower() in color_map:
+            color_hex = color_map[color.lower()]
+        elif color.startswith("#"):
+            # Remove # if present
+            color_hex = color[1:]
+        else:
+            # Assume it's already hex
+            color_hex = color
+        
+        # Check if label already exists
+        label = None
+        action = None
+        try:
+            # Try to get existing label
+            existing_label = repo.get_label(name)
+            # Label exists - update it
+            def _update_label():
+                existing_label.edit(
+                    name=name,
+                    color=color_hex,
+                    description=description or ""
+                )
+                return existing_label
+            
+            label = await issue_repo.with_retry(_update_label, "updating label")
+            action = "updated"
+        except Exception as get_error:
+            # Label doesn't exist or couldn't be retrieved - try to create it
+            try:
+                def _create_label():
+                    return repo.create_label(
+                        name=name,
+                        color=color_hex,
+                        description=description or ""
+                    )
+                
+                label = await issue_repo.with_retry(_create_label, "creating label")
+                action = "created"
+            except Exception as create_error:
+                # If creation also fails with "already_exists", try to get and update again
+                if "already_exists" in str(create_error).lower():
+                    try:
+                        existing_label = repo.get_label(name)
+                        def _update_label():
+                            existing_label.edit(
+                                name=name,
+                                color=color_hex,
+                                description=description or ""
+                            )
+                            return existing_label
+                        
+                        label = await issue_repo.with_retry(_update_label, "updating label")
+                        action = "updated"
+                    except Exception:
+                        # Re-raise the original create error if update also fails
+                        raise create_error
+                else:
+                    raise create_error
+        
+        return ToolResultFormatter.format_success(
+            "create_label",
+            {
+                "name": label.name,
+                "color": f"#{label.color}",
+                "description": label.description or "",
+                "url": label.url,
+                "action": action
+            },
+            FormattingOptions(content_type=None)
+        )
+    except Exception as e:
+        import traceback
+        error_traceback = traceback.format_exc()
+        error_msg = f"Error creating label: {str(e)}\nTraceback:\n{error_traceback}"
+        return MCPErrorResponse(
+            version="1.0",
+            request_id="",
+            error=MCPErrorDetail(
+                code=MCPErrorCode.INTERNAL_ERROR.value,
+                message=error_msg
+            )
+        )
+
+
+async def execute_list_labels(
+    service: ProjectManagementService,
+    args: Any
+) -> MCPResponse:
+    """Execute list_labels tool."""
+    from ...domain.mcp_types import MCPErrorCode, MCPErrorDetail, MCPErrorResponse
+    
+    # Handle both dict and Pydantic model inputs
+    if hasattr(args, 'model_dump'):
+        args_dict = args.model_dump()
+    elif isinstance(args, dict):
+        args_dict = args
+    else:
+        args_dict = {k: getattr(args, k) for k in dir(args) if not k.startswith('_')}
+    
+    limit = get_arg_value(args_dict, "limit")
+    
+    try:
+        # Get the repository to list labels
+        issue_repo = service.get_repository_factory().create_issue_repository()
+        repo = issue_repo.repo
+        
+        # Get all labels
+        def _get_labels():
+            return list(repo.get_labels())
+        
+        labels = await issue_repo.with_retry(_get_labels, "listing labels")
+        
+        # Convert labels to dict format
+        labels_list = []
+        for label in labels:
+            labels_list.append({
+                "name": label.name,
+                "color": f"#{label.color}",
+                "description": label.description or "",
+                "url": label.url
+            })
+        
+        # Apply limit if specified
+        if limit and limit > 0:
+            labels_list = labels_list[:limit]
+        
+        return ToolResultFormatter.format_success(
+            "list_labels",
+            labels_list,
+            FormattingOptions(content_type=None)
+        )
+    except Exception as e:
+        import traceback
+        error_traceback = traceback.format_exc()
+        error_msg = f"Error listing labels: {str(e)}\nTraceback:\n{error_traceback}"
+        return MCPErrorResponse(
+            version="1.0",
+            request_id="",
+            error=MCPErrorDetail(
+                code=MCPErrorCode.INTERNAL_ERROR.value,
+                message=error_msg
+            )
+        )
+
+
+async def execute_list_project_fields(
+    service: ProjectManagementService,
+    args: Any
+) -> MCPResponse:
+    """Execute list_project_fields tool."""
+    from ...domain.mcp_types import MCPErrorCode, MCPErrorDetail, MCPErrorResponse
+    from dataclasses import asdict
+    
+    # Handle both dict and Pydantic model inputs
+    if hasattr(args, 'model_dump'):
+        args_dict = args.model_dump()
+    elif isinstance(args, dict):
+        args_dict = args
+    else:
+        args_dict = {k: getattr(args, k) for k in dir(args) if not k.startswith('_')}
+    
+    project_id = get_arg_value(args_dict, "project_id")
+    
+    if not project_id:
+        return MCPErrorResponse(
+            version="1.0",
+            request_id="",
+            error=MCPErrorDetail(
+                code=MCPErrorCode.VALIDATION_ERROR.value,
+                message="project_id is required"
+            )
+        )
+    
+    try:
+        project_repo = service.get_repository_factory().create_project_repository()
+        
+        # Get all fields for the project
+        fields = await project_repo.list_fields(project_id)
+        
+        # Convert fields to dict format
+        fields_list = []
+        for field in fields:
+            if hasattr(field, '__dataclass_fields__'):
+                field_dict = asdict(field)
+                # Convert FieldOption objects to dicts if they exist
+                if 'options' in field_dict and field_dict['options']:
+                    field_dict['options'] = [
+                        {'id': opt.id, 'name': opt.name, 'color': opt.color, 'description': opt.description}
+                        if hasattr(opt, 'id') else {'name': str(opt)}
+                        for opt in field_dict['options']
+                    ]
+            else:
+                field_dict = field.__dict__ if hasattr(field, '__dict__') else {}
+            
+            fields_list.append(field_dict)
+        
+        return ToolResultFormatter.format_success(
+            "list_project_fields",
+            fields_list,
+            FormattingOptions(content_type=None)
+        )
+    except Exception as e:
+        import traceback
+        error_traceback = traceback.format_exc()
+        error_msg = f"Error listing project fields: {str(e)}\nTraceback:\n{error_traceback}"
+        return MCPErrorResponse(
+            version="1.0",
+            request_id="",
+            error=MCPErrorDetail(
+                code=MCPErrorCode.INTERNAL_ERROR.value,
+                message=error_msg
+            )
+        )
+
+
+async def execute_create_project_view(
+    service: ProjectManagementService,
+    args: Any
+) -> MCPResponse:
+    """Execute create_project_view tool."""
+    from ...domain.mcp_types import MCPErrorCode, MCPErrorDetail, MCPErrorResponse
+    from dataclasses import asdict
+    
+    # Handle both dict and Pydantic model inputs
+    if hasattr(args, 'model_dump'):
+        args_dict = args.model_dump()
+    elif isinstance(args, dict):
+        args_dict = args
+    else:
+        args_dict = {k: getattr(args, k) for k in dir(args) if not k.startswith('_')}
+    
+    project_id = get_arg_value(args_dict, "project_id")
+    name = get_arg_value(args_dict, "name")
+    layout = get_arg_value(args_dict, "layout")
+    
+    if not project_id or not name or not layout:
+        return MCPErrorResponse(
+            version="1.0",
+            request_id="",
+            error=MCPErrorDetail(
+                code=MCPErrorCode.VALIDATION_ERROR.value,
+                message="project_id, name, and layout are required"
+            )
+        )
+    
+    try:
+        project_repo = service.get_repository_factory().create_project_repository()
+        
+        # Map layout string to ViewLayout (it's a type alias, not an enum)
+        # ViewLayout = str  # 'board' | 'table' | 'timeline' | 'roadmap'
+        layout_map = {
+            "board": "board",
+            "table": "table",
+            "timeline": "timeline",
+            "roadmap": "roadmap"
+        }
+        
+        view_layout = layout_map.get(layout.lower(), "board")
+        
+        # Create view
+        view = await project_repo.create_view(project_id, name, view_layout)
+        
+        # Convert dataclass to dict properly
+        if hasattr(view, '__dataclass_fields__'):
+            view_dict = asdict(view)
+        else:
+            view_dict = view.__dict__ if hasattr(view, '__dict__') else {}
+        
+        return ToolResultFormatter.format_success(
+            "create_project_view",
+            view_dict,
+            FormattingOptions(content_type=None)
+        )
+    except Exception as e:
+        import traceback
+        error_traceback = traceback.format_exc()
+        error_msg = f"Error creating project view: {str(e)}\nTraceback:\n{error_traceback}"
         return MCPErrorResponse(
             version="1.0",
             request_id="",
@@ -1346,6 +1691,16 @@ TOOL_HANDLERS: Dict[str, callable] = {
     
     # Project field tools
     "create_project_field": execute_create_project_field,
+    
+    # Label tools
+    "create_label": execute_create_label,
+    "list_labels": execute_list_labels,
+    
+    # Project field tools
+    "list_project_fields": execute_list_project_fields,
+    
+    # Project view tools
+    "create_project_view": execute_create_project_view,
 }
 
 

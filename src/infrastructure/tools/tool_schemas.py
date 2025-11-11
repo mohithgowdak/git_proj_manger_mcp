@@ -1,6 +1,6 @@
 """Tool schemas and definitions for MCP tools."""
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 from pydantic import BaseModel, Field
 from .tool_validator import ToolDefinition
 
@@ -229,7 +229,7 @@ class CreateProjectFieldArgs(BaseModel):
     project_id: str = Field(..., min_length=1, description="Project ID")
     name: str = Field(..., min_length=1, description="Field name")
     type: str = Field(..., description="Field type")
-    options: Optional[List[Dict[str, Any]]] = Field(None, description="Field options")
+    options: Optional[Union[List[Dict[str, Any]], List[str], str]] = Field(None, description="Field options (can be list of dicts, list of strings, or JSON string)")
     description: Optional[str] = Field(None, description="Field description")
     required: Optional[bool] = Field(None, description="Required")
 

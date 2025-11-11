@@ -581,6 +581,83 @@ class GitHubProjectRepository(BaseGitHubRepository):
             self._logger.error(f"Error getting project item ID for issue {issue_id}: {str(e)}")
             return None
     
+    async def list_fields(self, project_id: ProjectId) -> List[CustomField]:
+        """List all fields for a project."""
+        query = """
+        query($projectId: ID!) {
+          node(id: $projectId) {
+            ... on ProjectV2 {
+              fields(first: 100) {
+                nodes {
+                  ... on ProjectV2Field {
+                    id
+                    name
+                    dataType
+                  }
+                  ... on ProjectV2SingleSelectField {
+                    id
+                    name
+                    dataType
+                    options {
+                      id
+                      name
+                      color
+                      description
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+        """
+        
+        try:
+            response = await self.graphql(query, {"projectId": project_id})
+            fields_data = response.get("node", {}).get("fields", {}).get("nodes", [])
+            
+            fields = []
+            for field_data in fields_data:
+                field_id = field_data.get("id")
+                field_name = field_data.get("name")
+                data_type = field_data.get("dataType")
+                
+                # Convert dataType to FieldType
+                from ....domain.types import FieldType
+                from ..util.graphql_helpers import map_from_graphql_field_type
+                field_type = map_from_graphql_field_type(data_type)
+                
+                # Get options if it's a single select field
+                options = None
+                if "options" in field_data and field_data["options"]:
+                    from ....domain.types import FieldOption
+                    options = [
+                        FieldOption(
+                            id=opt.get("id", ""),
+                            name=opt.get("name", ""),
+                            color=opt.get("color", ""),
+                            description=opt.get("description", "")
+                        )
+                        for opt in field_data["options"]
+                    ]
+                
+                field = CustomField(
+                    id=field_id,
+                    name=field_name,
+                    type=field_type,
+                    options=options,
+                    description=None,
+                    required=False,
+                    default_value=None,
+                    config=None
+                )
+                fields.append(field)
+            
+            return fields
+        except Exception as e:
+            self._logger.error(f"Error listing fields: {str(e)}")
+            raise
+    
     async def get_field_by_name(self, project_id: ProjectId, field_name: str) -> Optional[Dict[str, Any]]:
         """Get field by name from a project."""
         query = """
