@@ -467,6 +467,27 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [GitHub Projects API](https://docs.github.com/en/issues/planning-and-tracking-with-projects/automating-your-project/using-the-api-to-manage-projects)
 - [GitHub GraphQL API](https://docs.github.com/en/graphql)
 
+## Acknowledgments
+
+This project was inspired by and uses [mcp-github-project-manager](https://github.com/kunwarVivek/mcp-github-project-manager) by [@kunwarVivek](https://github.com/kunwarVivek) as a reference. The original TypeScript/Node.js implementation provided valuable insights into MCP server architecture, GitHub Projects API integration, and tool design patterns.
+
+### Changes in This Project
+
+This Python implementation adapts the concepts and architecture from the original project with the following key changes:
+
+- **Language Migration**: Converted from TypeScript/Node.js to Python 3.8+
+- **Type Validation**: Replaced Zod schemas with Pydantic models for Python-native validation
+- **Async Patterns**: Implemented Python async/await patterns throughout
+- **MCP SDK**: Integrated with Python MCP SDK instead of TypeScript SDK
+- **Architecture**: Maintained Clean Architecture principles adapted for Python
+- **Dependencies**: Uses Python ecosystem (pygithub, httpx, aiohttp) instead of Node.js packages
+- **Tool System**: Reimplemented 40+ MCP tools using Python patterns
+- **Error Handling**: Python-specific error handling with domain error types
+- **Caching**: In-memory caching implementation using Python dataclasses
+- **Documentation**: Updated all documentation for Python developers
+
+We extend our gratitude to the original project maintainers and contributors for their excellent work and for making their codebase available as open source.
+
 ## Current Status
 
 ### ✅ Implemented Features
