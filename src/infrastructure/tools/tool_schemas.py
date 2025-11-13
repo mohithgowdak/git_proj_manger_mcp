@@ -183,6 +183,48 @@ class UpdateIssueArgs(BaseModel):
     labels: Optional[List[str]] = Field(None, description="Labels")
 
 
+class AddIssueCommentArgs(BaseModel):
+    """Add issue comment arguments."""
+    issue_id: str = Field(..., min_length=1, description="Issue ID")
+    body: str = Field(..., min_length=1, description="Comment body")
+
+
+class ListIssueCommentsArgs(BaseModel):
+    """List issue comments arguments."""
+    issue_id: str = Field(..., min_length=1, description="Issue ID")
+
+
+class UpdateIssueCommentArgs(BaseModel):
+    """Update issue comment arguments."""
+    issue_id: str = Field(..., min_length=1, description="Issue ID")
+    comment_id: str = Field(..., min_length=1, description="Comment ID")
+    body: str = Field(..., min_length=1, description="Updated comment body")
+
+
+class DeleteIssueCommentArgs(BaseModel):
+    """Delete issue comment arguments."""
+    issue_id: str = Field(..., min_length=1, description="Issue ID")
+    comment_id: str = Field(..., min_length=1, description="Comment ID")
+
+
+class SearchIssuesArgs(BaseModel):
+    """Search issues arguments."""
+    query: str = Field(..., min_length=1, description="GitHub search query syntax. Examples: 'is:issue is:open label:bug', 'is:issue author:username', 'is:issue assignee:username'")
+
+
+class FilterProjectItemsArgs(BaseModel):
+    """Filter project items arguments."""
+    project_id: str = Field(..., min_length=1, description="Project ID")
+    field_filters: Dict[str, Any] = Field(..., description="Dictionary mapping field names to values. Example: {'Priority': 'High', 'Status': 'In Progress'}")
+
+
+class FindIssuesByFieldArgs(BaseModel):
+    """Find issues by field arguments."""
+    project_id: str = Field(..., min_length=1, description="Project ID")
+    field_name: str = Field(..., min_length=1, description="Name of the field to filter by")
+    field_value: Any = Field(..., description="Value to match")
+
+
 class CreateSprintArgs(BaseModel):
     """Create sprint arguments."""
     title: str = Field(..., min_length=1, description="Sprint title")
@@ -423,6 +465,51 @@ update_issue_tool = create_tool_definition(
     "update_issue",
     "Update a GitHub issue",
     UpdateIssueArgs
+)
+
+# Issue comment tools
+add_issue_comment_tool = create_tool_definition(
+    "add_issue_comment",
+    "Add a comment to a GitHub issue",
+    AddIssueCommentArgs
+)
+
+list_issue_comments_tool = create_tool_definition(
+    "list_issue_comments",
+    "List all comments on a GitHub issue",
+    ListIssueCommentsArgs
+)
+
+update_issue_comment_tool = create_tool_definition(
+    "update_issue_comment",
+    "Update a comment on a GitHub issue",
+    UpdateIssueCommentArgs
+)
+
+delete_issue_comment_tool = create_tool_definition(
+    "delete_issue_comment",
+    "Delete a comment from a GitHub issue",
+    DeleteIssueCommentArgs
+)
+
+# Issue search tools
+search_issues_tool = create_tool_definition(
+    "search_issues",
+    "Search issues using GitHub search API query syntax",
+    SearchIssuesArgs
+)
+
+# Project item filtering tools
+filter_project_items_tool = create_tool_definition(
+    "filter_project_items",
+    "Filter project items by field values",
+    FilterProjectItemsArgs
+)
+
+find_issues_by_field_tool = create_tool_definition(
+    "find_issues_by_field",
+    "Find issues by project field values",
+    FindIssuesByFieldArgs
 )
 
 # Sprint tools

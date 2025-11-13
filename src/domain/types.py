@@ -48,6 +48,27 @@ class CreateIssue:
     issue_type: Optional[str] = None
 
 
+# Type alias for comment ID
+CommentId = str
+
+
+@dataclass
+class IssueComment:
+    """Issue comment type."""
+    id: CommentId
+    body: str
+    author: str
+    created_at: str = ""
+    updated_at: str = ""
+    url: str = ""
+
+
+@dataclass
+class CreateIssueComment:
+    """Create issue comment data."""
+    body: str
+
+
 class IssueRepository(Protocol):
     """Issue repository protocol."""
     
@@ -73,6 +94,26 @@ class IssueRepository(Protocol):
     
     async def find_all(self, options: Optional[Dict[str, Any]] = None) -> List[Issue]:
         """Find all issues."""
+        ...
+    
+    async def search(self, query: str) -> List[Issue]:
+        """Search issues using GitHub search API query syntax."""
+        ...
+    
+    async def create_comment(self, issue_id: IssueId, data: CreateIssueComment) -> IssueComment:
+        """Create a comment on an issue."""
+        ...
+    
+    async def list_comments(self, issue_id: IssueId) -> List[IssueComment]:
+        """List all comments on an issue."""
+        ...
+    
+    async def update_comment(self, issue_id: IssueId, comment_id: CommentId, body: str) -> IssueComment:
+        """Update a comment on an issue."""
+        ...
+    
+    async def delete_comment(self, issue_id: IssueId, comment_id: CommentId) -> None:
+        """Delete a comment on an issue."""
         ...
 
 

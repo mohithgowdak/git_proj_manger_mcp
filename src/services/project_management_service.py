@@ -22,7 +22,10 @@ from ..domain.types import (
     ProjectId,
     IssueId,
     MilestoneId,
-    SprintId
+    SprintId,
+    IssueComment,
+    CreateIssueComment,
+    CommentId
 )
 from ..domain.resource_types import ResourceStatus
 
@@ -119,6 +122,64 @@ class ProjectManagementService:
             await self._try_update_project_item_status(issue_id, "in_progress")
         
         return issue
+    
+    # Issue comment methods
+    async def create_issue_comment(self, issue_id: IssueId, data: CreateIssueComment) -> IssueComment:
+        """Create a comment on an issue."""
+        return await self._issue_repo.create_comment(issue_id, data)
+    
+    async def list_issue_comments(self, issue_id: IssueId) -> List[IssueComment]:
+        """List all comments on an issue."""
+        return await self._issue_repo.list_comments(issue_id)
+    
+    async def update_issue_comment(self, issue_id: IssueId, comment_id: CommentId, body: str) -> IssueComment:
+        """Update a comment on an issue."""
+        return await self._issue_repo.update_comment(issue_id, comment_id, body)
+    
+    async def delete_issue_comment(self, issue_id: IssueId, comment_id: CommentId) -> None:
+        """Delete a comment on an issue."""
+        await self._issue_repo.delete_comment(issue_id, comment_id)
+    
+    # Issue search methods
+    async def search_issues(self, query: str) -> List[Issue]:
+        """Search issues using GitHub search API query syntax.
+        
+        Examples:
+        - "is:issue is:open label:bug"
+        - "is:issue author:username"
+        - "is:issue assignee:username"
+        """
+        return await self._issue_repo.search(query)
+    
+    # Project item filtering methods
+    async def filter_project_items(
+        self,
+        project_id: ProjectId,
+        field_filters: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
+        """Filter project items by field values.
+        
+        Args:
+            project_id: The project ID
+            field_filters: Dictionary mapping field names to values
+                Example: {"Priority": "High", "Status": "In Progress"}
+        """
+        return await self._project_repo.filter_project_items(project_id, field_filters)
+    
+    async def find_issues_by_field(
+        self,
+        project_id: ProjectId,
+        field_name: str,
+        field_value: Any
+    ) -> List[IssueId]:
+        """Find issue IDs by project field value.
+        
+        Args:
+            project_id: The project ID
+            field_name: Name of the field to filter by
+            field_value: Value to match
+        """
+        return await self._project_repo.find_issues_by_field(project_id, field_name, field_value)
     
     async def _try_update_project_item_status(self, issue_id: IssueId, status_value: str) -> None:
         """Try to update project item Status field for an issue."""

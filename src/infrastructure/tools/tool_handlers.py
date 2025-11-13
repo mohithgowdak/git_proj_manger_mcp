@@ -513,6 +513,233 @@ async def execute_delete_project(
     )
 
 
+async def execute_add_issue_comment(
+    service: ProjectManagementService,
+    args: Any
+) -> MCPResponse:
+    """Execute add_issue_comment tool."""
+    from ...domain.types import CreateIssueComment
+    from dataclasses import asdict
+    
+    # Handle both dict and Pydantic model inputs
+    if hasattr(args, 'model_dump'):
+        args_dict = args.model_dump()
+    elif isinstance(args, dict):
+        args_dict = args
+    else:
+        args_dict = {k: getattr(args, k) for k in dir(args) if not k.startswith('_')}
+    
+    issue_id = get_arg_value(args_dict, "issue_id")
+    body = get_arg_value(args_dict, "body")
+    
+    create_comment = CreateIssueComment(body=body)
+    comment = await service.create_issue_comment(issue_id, create_comment)
+    
+    # Convert dataclass to dict properly
+    comment_dict = asdict(comment) if hasattr(comment, '__dataclass_fields__') else comment.__dict__
+    
+    return ToolResultFormatter.format_success(
+        "add_issue_comment",
+        comment_dict,
+        FormattingOptions(content_type=None)
+    )
+
+
+async def execute_list_issue_comments(
+    service: ProjectManagementService,
+    args: Any
+) -> MCPResponse:
+    """Execute list_issue_comments tool."""
+    from dataclasses import asdict
+    
+    # Handle both dict and Pydantic model inputs
+    if hasattr(args, 'model_dump'):
+        args_dict = args.model_dump()
+    elif isinstance(args, dict):
+        args_dict = args
+    else:
+        args_dict = {k: getattr(args, k) for k in dir(args) if not k.startswith('_')}
+    
+    issue_id = get_arg_value(args_dict, "issue_id")
+    comments = await service.list_issue_comments(issue_id)
+    
+    # Convert dataclasses to dicts properly
+    comments_list = [
+        asdict(comment) if hasattr(comment, '__dataclass_fields__') else comment.__dict__
+        for comment in comments
+    ]
+    
+    return ToolResultFormatter.format_success(
+        "list_issue_comments",
+        comments_list,
+        FormattingOptions(content_type=None)
+    )
+
+
+async def execute_update_issue_comment(
+    service: ProjectManagementService,
+    args: Any
+) -> MCPResponse:
+    """Execute update_issue_comment tool."""
+    from dataclasses import asdict
+    
+    # Handle both dict and Pydantic model inputs
+    if hasattr(args, 'model_dump'):
+        args_dict = args.model_dump()
+    elif isinstance(args, dict):
+        args_dict = args
+    else:
+        args_dict = {k: getattr(args, k) for k in dir(args) if not k.startswith('_')}
+    
+    issue_id = get_arg_value(args_dict, "issue_id")
+    comment_id = get_arg_value(args_dict, "comment_id")
+    body = get_arg_value(args_dict, "body")
+    
+    comment = await service.update_issue_comment(issue_id, comment_id, body)
+    
+    # Convert dataclass to dict properly
+    comment_dict = asdict(comment) if hasattr(comment, '__dataclass_fields__') else comment.__dict__
+    
+    return ToolResultFormatter.format_success(
+        "update_issue_comment",
+        comment_dict,
+        FormattingOptions(content_type=None)
+    )
+
+
+async def execute_delete_issue_comment(
+    service: ProjectManagementService,
+    args: Any
+) -> MCPResponse:
+    """Execute delete_issue_comment tool."""
+    # Handle both dict and Pydantic model inputs
+    if hasattr(args, 'model_dump'):
+        args_dict = args.model_dump()
+    elif isinstance(args, dict):
+        args_dict = args
+    else:
+        args_dict = {k: getattr(args, k) for k in dir(args) if not k.startswith('_')}
+    
+    issue_id = get_arg_value(args_dict, "issue_id")
+    comment_id = get_arg_value(args_dict, "comment_id")
+    
+    await service.delete_issue_comment(issue_id, comment_id)
+    
+    return ToolResultFormatter.format_success(
+        "delete_issue_comment",
+        {"success": True, "issue_id": issue_id, "comment_id": comment_id},
+        FormattingOptions(content_type=None)
+    )
+
+
+async def execute_search_issues(
+    service: ProjectManagementService,
+    args: Any
+) -> MCPResponse:
+    """Execute search_issues tool."""
+    from dataclasses import asdict
+    
+    # Handle both dict and Pydantic model inputs
+    if hasattr(args, 'model_dump'):
+        args_dict = args.model_dump()
+    elif isinstance(args, dict):
+        args_dict = args
+    else:
+        args_dict = {k: getattr(args, k) for k in dir(args) if not k.startswith('_')}
+    
+    query = get_arg_value(args_dict, "query")
+    issues = await service.search_issues(query)
+    
+    # Convert dataclasses to dicts properly
+    issues_list = [
+        asdict(issue) if hasattr(issue, '__dataclass_fields__') else issue.__dict__
+        for issue in issues
+    ]
+    
+    return ToolResultFormatter.format_success(
+        "search_issues",
+        {
+            "query": query,
+            "count": len(issues_list),
+            "issues": issues_list
+        },
+        FormattingOptions(content_type=None)
+    )
+
+
+async def execute_filter_project_items(
+    service: ProjectManagementService,
+    args: Any
+) -> MCPResponse:
+    """Execute filter_project_items tool."""
+    # Handle both dict and Pydantic model inputs
+    if hasattr(args, 'model_dump'):
+        args_dict = args.model_dump()
+    elif isinstance(args, dict):
+        args_dict = args
+    else:
+        args_dict = {k: getattr(args, k) for k in dir(args) if not k.startswith('_')}
+    
+    project_id = get_arg_value(args_dict, "project_id")
+    field_filters = get_arg_value(args_dict, "field_filters")
+    
+    if not isinstance(field_filters, dict):
+        from ...domain.mcp_types import MCPErrorCode, MCPErrorDetail, MCPErrorResponse
+        return MCPErrorResponse(
+            version="1.0",
+            request_id="",
+            error=MCPErrorDetail(
+                code=MCPErrorCode.VALIDATION_ERROR.value,
+                message="field_filters must be a dictionary"
+            )
+        )
+    
+    filtered_items = await service.filter_project_items(project_id, field_filters)
+    
+    return ToolResultFormatter.format_success(
+        "filter_project_items",
+        {
+            "project_id": project_id,
+            "filters": field_filters,
+            "count": len(filtered_items),
+            "items": filtered_items
+        },
+        FormattingOptions(content_type=None)
+    )
+
+
+async def execute_find_issues_by_field(
+    service: ProjectManagementService,
+    args: Any
+) -> MCPResponse:
+    """Execute find_issues_by_field tool."""
+    # Handle both dict and Pydantic model inputs
+    if hasattr(args, 'model_dump'):
+        args_dict = args.model_dump()
+    elif isinstance(args, dict):
+        args_dict = args
+    else:
+        args_dict = {k: getattr(args, k) for k in dir(args) if not k.startswith('_')}
+    
+    project_id = get_arg_value(args_dict, "project_id")
+    field_name = get_arg_value(args_dict, "field_name")
+    field_value = get_arg_value(args_dict, "field_value")
+    
+    issue_ids = await service.find_issues_by_field(project_id, field_name, field_value)
+    
+    return ToolResultFormatter.format_success(
+        "find_issues_by_field",
+        {
+            "project_id": project_id,
+            "field_name": field_name,
+            "field_value": field_value,
+            "count": len(issue_ids),
+            "issue_ids": issue_ids
+        },
+        FormattingOptions(content_type=None)
+    )
+
+
 async def execute_update_issue(
     service: ProjectManagementService,
     args: Any
@@ -1663,6 +1890,19 @@ TOOL_HANDLERS: Dict[str, callable] = {
     "get_issue": execute_get_issue,
     "list_issues": execute_list_issues,
     "update_issue": execute_update_issue,
+    
+    # Issue comment tools
+    "add_issue_comment": execute_add_issue_comment,
+    "list_issue_comments": execute_list_issue_comments,
+    "update_issue_comment": execute_update_issue_comment,
+    "delete_issue_comment": execute_delete_issue_comment,
+    
+    # Issue search tools
+    "search_issues": execute_search_issues,
+    
+    # Project item filtering tools
+    "filter_project_items": execute_filter_project_items,
+    "find_issues_by_field": execute_find_issues_by_field,
     
     # Milestone tools
     "create_milestone": execute_create_milestone,

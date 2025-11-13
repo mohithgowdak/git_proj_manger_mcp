@@ -826,4 +826,186 @@ class GitHubProjectRepository(BaseGitHubRepository):
         except Exception as e:
             self._logger.error(f"Error getting field {field_id}: {str(e)}")
             return None
+    
+    async def filter_project_items(
+        self, 
+        project_id: ProjectId, 
+        field_filters: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
+        """Filter project items by field values.
+        
+        Args:
+            project_id: The project ID
+            field_filters: Dictionary mapping field names to values to filter by
+                Example: {"Priority": "High", "Status": "In Progress"}
+        
+        Returns:
+            List of project items matching the filters
+        """
+        try:
+            # Get all project items with their field values
+            items_query = """
+            query($projectId: ID!, $after: String) {
+              node(id: $projectId) {
+                ... on ProjectV2 {
+                  items(first: 100, after: $after) {
+                    pageInfo {
+                      hasNextPage
+                      endCursor
+                    }
+                    nodes {
+                      id
+                      fieldValues(first: 20) {
+                        nodes {
+                          ... on ProjectV2ItemFieldTextValue {
+                            text
+                            field {
+                              ... on ProjectV2Field {
+                                id
+                                name
+                              }
+                            }
+                          }
+                          ... on ProjectV2ItemFieldNumberValue {
+                            number
+                            field {
+                              ... on ProjectV2Field {
+                                id
+                                name
+                              }
+                            }
+                          }
+                          ... on ProjectV2ItemFieldSingleSelectValue {
+                            name
+                            field {
+                              ... on ProjectV2SingleSelectField {
+                                id
+                                name
+                              }
+                            }
+                          }
+                          ... on ProjectV2ItemFieldDateValue {
+                            date
+                            field {
+                              ... on ProjectV2Field {
+                                id
+                                name
+                              }
+                            }
+                          }
+                        }
+                      }
+                      content {
+                        ... on Issue {
+                          id
+                          number
+                          title
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+            """
+            
+            all_items = []
+            cursor = None
+            
+            while True:
+                response = await self.graphql(items_query, {
+                    "projectId": project_id,
+                    "after": cursor
+                })
+                
+                items_data = response.get("node", {}).get("items", {})
+                nodes = items_data.get("nodes", [])
+                
+                # Filter items by field values
+                for item in nodes:
+                    field_values = item.get("fieldValues", {}).get("nodes", [])
+                    item_fields = {}
+                    
+                    # Extract field values into a dictionary
+                    for fv in field_values:
+                        field = fv.get("field", {})
+                        field_name = field.get("name", "")
+                        
+                        # Get the value based on field type
+                        if "text" in fv:
+                            item_fields[field_name] = fv.get("text")
+                        elif "number" in fv:
+                            item_fields[field_name] = fv.get("number")
+                        elif "name" in fv:
+                            item_fields[field_name] = fv.get("name")
+                        elif "date" in fv:
+                            item_fields[field_name] = fv.get("date")
+                    
+                    # Check if item matches all filters
+                    matches = True
+                    for filter_field, filter_value in field_filters.items():
+                        item_value = item_fields.get(filter_field)
+                        # Normalize comparison (case-insensitive for strings)
+                        if isinstance(item_value, str) and isinstance(filter_value, str):
+                            if item_value.lower() != filter_value.lower():
+                                matches = False
+                                break
+                        elif item_value != filter_value:
+                            matches = False
+                            break
+                    
+                    if matches:
+                        all_items.append({
+                            "id": item.get("id"),
+                            "content": item.get("content", {}),
+                            "field_values": item_fields
+                        })
+                
+                page_info = items_data.get("pageInfo", {})
+                if not page_info.get("hasNextPage"):
+                    break
+                cursor = page_info.get("endCursor")
+            
+            return all_items
+        except Exception as e:
+            self._logger.error(f"Error filtering project items: {str(e)}")
+            raise ValueError(f"Failed to filter project items: {str(e)}")
+    
+    async def find_issues_by_field(
+        self,
+        project_id: ProjectId,
+        field_name: str,
+        field_value: Any
+    ) -> List[IssueId]:
+        """Find issue IDs by project field value.
+        
+        Args:
+            project_id: The project ID
+            field_name: Name of the field to filter by
+            field_value: Value to match
+        
+        Returns:
+            List of issue IDs (as strings) that match the field value
+        """
+        try:
+            # Use filter_project_items with single field filter
+            filtered_items = await self.filter_project_items(
+                project_id,
+                {field_name: field_value}
+            )
+            
+            # Extract issue IDs from filtered items
+            issue_ids = []
+            for item in filtered_items:
+                content = item.get("content", {})
+                if content.get("id"):
+                    # Extract issue number from node ID or use number
+                    issue_number = content.get("number")
+                    if issue_number:
+                        issue_ids.append(str(issue_number))
+            
+            return issue_ids
+        except Exception as e:
+            self._logger.error(f"Error finding issues by field: {str(e)}")
+            raise ValueError(f"Failed to find issues by field: {str(e)}")
 
