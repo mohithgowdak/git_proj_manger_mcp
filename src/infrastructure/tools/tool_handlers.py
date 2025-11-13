@@ -582,6 +582,117 @@ async def execute_update_issue(
     issue_id = get_arg_value(args_dict, "issue_id")
     issue = await service.update_issue(issue_id, update_data)
     
+    # Handle project field values if provided (project fields, not issue fields)
+    # This allows setting any project field (Priority, Status, Custom Fields, etc.) on issues
+    project_field_values = get_arg_value(args_dict, "project_field_values")
+    project_id = get_arg_value(args_dict, "project_id")
+    
+    if project_field_values and project_id:
+        try:
+            project_repo = service.get_repository_factory().create_project_repository()
+            
+            # Find the project item ID for this issue
+            item_id = None
+            try:
+                # Try to use the issue number if it's an integer
+                issue_number = int(issue_id)
+                item_id = await project_repo.get_project_item_id_for_issue(project_id, issue_number)
+            except (ValueError, TypeError):
+                # issue_id might be a node ID, need to find item manually
+                issue_repo = service.get_repository_factory().create_issue_repository()
+                
+                # Get the issue node ID
+                issue_node_id = issue_id
+                try:
+                    # Try to parse as number first
+                    issue_number = int(issue_id)
+                    issue_node_query = """
+                    query($owner: String!, $repo: String!, $number: Int!) {
+                      repository(owner: $owner, name: $repo) {
+                        issue(number: $number) {
+                          id
+                        }
+                      }
+                    }
+                    """
+                    issue_node_response = await project_repo.graphql(issue_node_query, {
+                        "owner": issue_repo.owner,
+                        "repo": issue_repo.repository,
+                        "number": issue_number
+                    })
+                    issue_node_id = issue_node_response.get("repository", {}).get("issue", {}).get("id")
+                except (ValueError, KeyError):
+                    # Assume issue_id is already a node ID
+                    pass
+                
+                if issue_node_id:
+                    # Find the project item for this issue
+                    items_query = """
+                    query($projectId: ID!, $after: String) {
+                      node(id: $projectId) {
+                        ... on ProjectV2 {
+                          items(first: 100, after: $after) {
+                            pageInfo {
+                              hasNextPage
+                              endCursor
+                            }
+                            nodes {
+                              id
+                              content {
+                                ... on Issue {
+                                  id
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                    """
+                    
+                    # Search for the item
+                    cursor = None
+                    while True:
+                        items_response = await project_repo.graphql(items_query, {
+                            "projectId": project_id,
+                            "after": cursor
+                        })
+                        items_data = items_response.get("node", {}).get("items", {})
+                        nodes = items_data.get("nodes", [])
+                        
+                        for item in nodes:
+                            if item.get("content", {}).get("id") == issue_node_id:
+                                item_id = item.get("id")
+                                break
+                        
+                        if item_id or not items_data.get("pageInfo", {}).get("hasNextPage"):
+                            break
+                        cursor = items_data.get("pageInfo", {}).get("endCursor")
+            
+            if item_id:
+                # Set each field value (works with any field name, not just "Priority")
+                if isinstance(project_field_values, dict):
+                    for field_name, field_value in project_field_values.items():
+                        try:
+                            # Get the field by name (works with any field name)
+                            field = await project_repo.get_field_by_name(project_id, field_name)
+                            if field:
+                                # Set the field value
+                                await project_repo.set_field_value(
+                                    project_id,
+                                    item_id,
+                                    field["id"],
+                                    field_value
+                                )
+                        except Exception as field_error:
+                            # Log but continue with other fields
+                            import sys
+                            sys.stderr.write(f"Warning: Could not set field '{field_name}' on project item: {str(field_error)}\n")
+        except Exception as e:
+            # Log but don't fail the update if project field setting fails
+            import sys
+            sys.stderr.write(f"Warning: Could not set project field values on project item: {str(e)}\n")
+    
     # Convert dataclass to dict properly
     issue_dict = asdict(issue) if hasattr(issue, '__dataclass_fields__') else issue.__dict__
     

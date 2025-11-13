@@ -58,45 +58,98 @@ class ToolValidator:
             
             log_debug(f"Args after conversion: {json.dumps(args, indent=2, default=str)}")
             
-            # For create_project_field, handle options parameter which might be a string
+            # For create_project_field, handle options parameter which might be a string or various formats
             if tool_name == "create_project_field" and isinstance(args, dict) and "options" in args:
                 options = args["options"]
-                if isinstance(options, str):
+                log_debug(f"Processing options: type={type(options)}, value={options}")
+                
+                # If options is None or empty, skip processing
+                if options is None:
+                    log_debug("Options is None, skipping")
+                elif isinstance(options, str):
                     log_debug(f"Options is a string, attempting to parse: {options}")
                     try:
                         # Try JSON parsing first
                         parsed_options = json.loads(options)
                         args["options"] = parsed_options
-                        log_debug(f"Parsed options as JSON successfully")
+                        log_debug(f"Parsed options as JSON successfully: {parsed_options}")
                     except json.JSONDecodeError:
                         # Try ast.literal_eval for Python list syntax
                         try:
                             import ast
                             parsed_options = ast.literal_eval(options)
                             args["options"] = parsed_options
-                            log_debug(f"Parsed options using ast.literal_eval successfully")
+                            log_debug(f"Parsed options using ast.literal_eval successfully: {parsed_options}")
                         except (ValueError, SyntaxError):
                             # Try to parse as a simple list of strings
                             try:
+                                # Remove common prefixes/suffixes
+                                cleaned = options.strip()
+                                
+                                # Check if it contains " -> " (arrow notation from user prompt)
+                                if " -> " in cleaned:
+                                    # Extract the part after the arrow
+                                    parts = cleaned.split(" -> ", 1)
+                                    if len(parts) > 1:
+                                        cleaned = parts[1].strip()
+                                
                                 # Check if it contains " or " or " and " - common separator in natural language
-                                if " or " in options.lower() or " and " in options.lower():
+                                if " or " in cleaned.lower() or " and " in cleaned.lower():
                                     # Split by " or " or " and "
-                                    separator = " or " if " or " in options.lower() else " and "
-                                    items = [item.strip().strip('"').strip("'") for item in options.split(separator)]
+                                    separator = " or " if " or " in cleaned.lower() else " and "
+                                    items = [item.strip().strip('"').strip("'") for item in cleaned.split(separator)]
                                     args["options"] = [{"name": item} for item in items if item]
                                     log_debug(f"Parsed options with 'or/and' separator: {args['options']}")
+                                elif "," in cleaned:
+                                    # Split by comma (handles "High, Medium, Low" or "High,Medium,Low")
+                                    items = [item.strip().strip('"').strip("'") for item in cleaned.split(',')]
+                                    args["options"] = [{"name": item} for item in items if item]
+                                    log_debug(f"Parsed options as comma-separated list: {args['options']}")
                                 else:
-                                    # Remove brackets and quotes, split by comma
-                                    cleaned = options.strip().strip('[]').strip()
+                                    # Single option or no separator - treat as single option
+                                    cleaned = cleaned.strip('[]').strip().strip('"').strip("'")
                                     if cleaned:
-                                        # Split by comma and clean each item
-                                        items = [item.strip().strip('"').strip("'") for item in cleaned.split(',')]
-                                        args["options"] = [{"name": item} for item in items if item]
-                                        log_debug(f"Parsed options as simple list: {args['options']}")
+                                        args["options"] = [{"name": cleaned}]
+                                        log_debug(f"Parsed options as single option: {args['options']}")
                                     else:
-                                        log_debug(f"Empty options string, leaving as is")
-                            except Exception:
-                                log_debug(f"Could not parse options, leaving as string")
+                                        log_debug(f"Empty options string, setting to None")
+                                        args["options"] = None
+                            except Exception as parse_error:
+                                log_debug(f"Could not parse options: {parse_error}, setting to None")
+                                args["options"] = None
+                elif isinstance(options, list):
+                    # Options is already a list, but ensure it's in the right format
+                    log_debug(f"Options is already a list: {options}")
+                    processed_options = []
+                    for opt in options:
+                        if isinstance(opt, dict):
+                            # Already a dict, ensure it has 'name' key
+                            if "name" in opt:
+                                processed_options.append(opt)
+                            else:
+                                # Convert dict to have 'name' key
+                                processed_options.append({"name": str(opt)})
+                        elif isinstance(opt, str):
+                            # String in list, convert to dict
+                            processed_options.append({"name": opt})
+                        else:
+                            # Other type, convert to string
+                            processed_options.append({"name": str(opt)})
+                    args["options"] = processed_options
+                    log_debug(f"Processed list options: {args['options']}")
+                else:
+                    # Other type, try to convert
+                    log_debug(f"Options is unexpected type {type(options)}, attempting conversion")
+                    try:
+                        options_str = str(options)
+                        if options_str.strip():
+                            args["options"] = [{"name": options_str.strip()}]
+                        else:
+                            args["options"] = None
+                    except Exception:
+                        args["options"] = None
+                
+                log_debug(f"Final options after processing: {args.get('options')}")
             
             # For create_roadmap, handle nested structures BEFORE Pydantic validation
             # This is critical because Pydantic will fail if it sees string representations

@@ -181,6 +181,8 @@ class UpdateIssueArgs(BaseModel):
     milestone_id: Optional[str] = Field(None, description="Milestone ID")
     assignees: Optional[List[str]] = Field(None, description="Assignees")
     labels: Optional[List[str]] = Field(None, description="Labels")
+    project_field_values: Optional[Dict[str, Any]] = Field(None, description="Project field values to set (field_name -> value). Requires project_id. Example: {'Priority': 'High', 'Status': 'In Progress'}")
+    project_id: Optional[str] = Field(None, description="Project ID (required if setting project_field_values)")
 
 
 class CreateSprintArgs(BaseModel):
@@ -229,9 +231,14 @@ class CreateProjectFieldArgs(BaseModel):
     project_id: str = Field(..., min_length=1, description="Project ID")
     name: str = Field(..., min_length=1, description="Field name")
     type: str = Field(..., description="Field type")
-    options: Optional[Union[List[Dict[str, Any]], List[str], str]] = Field(None, description="Field options (can be list of dicts, list of strings, or JSON string)")
+    options: Optional[Any] = Field(None, description="Field options. Accepts any format: array of objects [{\"name\": \"High\"}], array of strings [\"High\", \"Medium\"], comma-separated string \"High, Medium, Low\", or JSON string. The validator will parse any format automatically.")
     description: Optional[str] = Field(None, description="Field description")
     required: Optional[bool] = Field(None, description="Required")
+    
+    class Config:
+        """Pydantic config."""
+        # Allow any type for options to be more flexible
+        arbitrary_types_allowed = True
 
 
 class CreateProjectViewArgs(BaseModel):

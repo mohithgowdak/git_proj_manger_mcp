@@ -42,14 +42,30 @@ class ToolRegistry:
     
     def get_tools_for_mcp(self) -> List[Dict[str, Any]]:
         """Convert tools to MCP format for list_tools response."""
-        return [
-            {
-                "name": tool.name,
-                "description": tool.description,
-                "inputSchema": self._convert_pydantic_to_json_schema(tool.schema),
-            }
-            for tool in self.get_all_tools()
-        ]
+        tools_list = []
+        for tool in self.get_all_tools():
+            try:
+                schema = self._convert_pydantic_to_json_schema(tool.schema)
+                # Debug: log schema for create_project_field
+                if tool.name == "create_project_field":
+                    import sys
+                    import json
+                    sys.stderr.write(f"[ToolRegistry] Schema for {tool.name}:\n{json.dumps(schema, indent=2)}\n")
+                tools_list.append({
+                    "name": tool.name,
+                    "description": tool.description,
+                    "inputSchema": schema,
+                })
+            except Exception as e:
+                import sys
+                sys.stderr.write(f"Error generating schema for tool {tool.name}: {e}\n")
+                # Add tool with basic schema if generation fails
+                tools_list.append({
+                    "name": tool.name,
+                    "description": tool.description,
+                    "inputSchema": {"type": "object", "properties": {}},
+                })
+        return tools_list
     
     def _register_built_in_tools(self) -> None:
         """Register all built-in tools."""
@@ -180,11 +196,43 @@ class ToolRegistry:
         try:
             from pydantic import BaseModel
             if issubclass(schema, BaseModel):
-                return schema.model_json_schema()
+                json_schema = schema.model_json_schema()
+                
+                # Special handling for create_project_field to make options more flexible
+                # Check by schema name or by checking if it has the expected fields
+                schema_name = getattr(schema, '__name__', '')
+                is_create_field = (schema_name == "CreateProjectFieldArgs" or 
+                                 ("properties" in json_schema and 
+                                  "project_id" in json_schema.get("properties", {}) and
+                                  "name" in json_schema.get("properties", {}) and
+                                  "type" in json_schema.get("properties", {}) and
+                                  "options" in json_schema.get("properties", {})))
+                
+                if is_create_field and "properties" in json_schema:
+                    if "options" in json_schema["properties"]:
+                        # Make options accept literally any format - we'll parse it in the validator
+                        # This is the most permissive schema possible
+                        json_schema["properties"]["options"] = {
+                            "description": "Field options. Can be: array of objects like [{\"name\": \"High\"}], array of strings like [\"High\", \"Medium\"], comma-separated string like \"High, Medium, Low\", or JSON string. The validator will parse any format.",
+                            "oneOf": [
+                                {"type": "array"},
+                                {"type": "string"},
+                                {"type": "null"}
+                            ]
+                        }
+                        # Also add to definitions if needed
+                        if "definitions" not in json_schema:
+                            json_schema["definitions"] = {}
+                
+                return json_schema
             else:
                 # Fallback to basic schema
                 return {"type": "object", "properties": {}}
-        except Exception:
+        except Exception as e:
+            import sys
+            sys.stderr.write(f"Error converting schema to JSON: {e}\n")
+            import traceback
+            sys.stderr.write(f"Traceback: {traceback.format_exc()}\n")
             # Fallback to basic schema
             return {"type": "object", "properties": {}}
 
