@@ -7,7 +7,7 @@ from github import Github
 from github.Repository import Repository
 from ..github_config import GitHubConfig
 from .base_repository import BaseGitHubRepository
-from ....domain.types import Issue, CreateIssue, IssueId, MilestoneId
+from ....domain.types import Issue, CreateIssue, IssueId, MilestoneId, IssueComment, CreateIssueComment, CommentId
 from ....domain.resource_types import ResourceStatus
 import httpx
 
@@ -295,6 +295,41 @@ class GitHubIssueRepository(BaseGitHubRepository):
         issues = self.repo.get_issues(state=state)
         return [self._convert_issue(issue) for issue in issues]
     
+    async def search(self, query: str) -> List[Issue]:
+        """Search issues using GitHub search API query syntax.
+        
+        Examples:
+        - "is:issue is:open label:bug"
+        - "is:issue author:username"
+        - "is:issue assignee:username"
+        - "is:issue milestone:v1.0"
+        """
+        try:
+            # GitHub search API format: repo:owner/repo query
+            search_query = f"repo:{self.owner}/{self.repository} {query}"
+            
+            # Use GitHub search API
+            def _search_issues():
+                return self.github.search_issues(search_query)
+            
+            search_results = await self.with_retry(_search_issues, "searching issues")
+            
+            # Convert search results to issues
+            issues = []
+            for result in search_results:
+                # Get full issue details
+                try:
+                    issue = self.repo.get_issue(result.number)
+                    issues.append(self._convert_issue(issue))
+                except Exception as e:
+                    self._logger.warn(f"Could not get issue {result.number}: {str(e)}")
+                    continue
+            
+            return issues
+        except Exception as e:
+            self._logger.error(f"Error searching issues with query '{query}': {str(e)}")
+            raise ValueError(f"Failed to search issues: {str(e)}")
+    
     def _convert_issue(self, issue) -> Issue:
         """Convert GitHub issue to domain Issue."""
         from ....domain.types import Issue as DomainIssue
@@ -312,4 +347,73 @@ class GitHubIssueRepository(BaseGitHubRepository):
             updated_at=issue.updated_at.isoformat() if issue.updated_at else "",
             url=issue.html_url
         )
+    
+    def _convert_comment(self, comment) -> IssueComment:
+        """Convert GitHub comment to domain IssueComment."""
+        return IssueComment(
+            id=str(comment.id),
+            body=comment.body or "",
+            author=comment.user.login if comment.user else "",
+            created_at=comment.created_at.isoformat() if comment.created_at else "",
+            updated_at=comment.updated_at.isoformat() if comment.updated_at else "",
+            url=comment.html_url if hasattr(comment, 'html_url') else ""
+        )
+    
+    async def create_comment(self, issue_id: IssueId, data: CreateIssueComment) -> IssueComment:
+        """Create a comment on an issue."""
+        try:
+            issue = self.repo.get_issue(int(issue_id))
+            
+            def _create_comment():
+                return issue.create_comment(data.body)
+            
+            comment = await self.with_retry(_create_comment, "creating comment")
+            return self._convert_comment(comment)
+        except Exception as e:
+            self._logger.error(f"Error creating comment on issue {issue_id}: {str(e)}")
+            raise ValueError(f"Failed to create comment: {str(e)}")
+    
+    async def list_comments(self, issue_id: IssueId) -> List[IssueComment]:
+        """List all comments on an issue."""
+        try:
+            issue = self.repo.get_issue(int(issue_id))
+            
+            def _get_comments():
+                return list(issue.get_comments())
+            
+            comments = await self.with_retry(_get_comments, "listing comments")
+            return [self._convert_comment(comment) for comment in comments]
+        except Exception as e:
+            self._logger.error(f"Error listing comments for issue {issue_id}: {str(e)}")
+            raise ValueError(f"Failed to list comments: {str(e)}")
+    
+    async def update_comment(self, issue_id: IssueId, comment_id: CommentId, body: str) -> IssueComment:
+        """Update a comment on an issue."""
+        try:
+            issue = self.repo.get_issue(int(issue_id))
+            comment = issue.get_comment(int(comment_id))
+            
+            def _update_comment():
+                comment.edit(body)
+                return comment
+            
+            updated_comment = await self.with_retry(_update_comment, "updating comment")
+            return self._convert_comment(updated_comment)
+        except Exception as e:
+            self._logger.error(f"Error updating comment {comment_id} on issue {issue_id}: {str(e)}")
+            raise ValueError(f"Failed to update comment: {str(e)}")
+    
+    async def delete_comment(self, issue_id: IssueId, comment_id: CommentId) -> None:
+        """Delete a comment on an issue."""
+        try:
+            issue = self.repo.get_issue(int(issue_id))
+            comment = issue.get_comment(int(comment_id))
+            
+            def _delete_comment():
+                comment.delete()
+            
+            await self.with_retry(_delete_comment, "deleting comment")
+        except Exception as e:
+            self._logger.error(f"Error deleting comment {comment_id} on issue {issue_id}: {str(e)}")
+            raise ValueError(f"Failed to delete comment: {str(e)}")
 

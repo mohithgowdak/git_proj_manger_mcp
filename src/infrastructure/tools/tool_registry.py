@@ -97,6 +97,19 @@ class ToolRegistry:
             get_issue_tool,
             update_issue_tool,
             
+            # Issue comment tools
+            add_issue_comment_tool,
+            list_issue_comments_tool,
+            update_issue_comment_tool,
+            delete_issue_comment_tool,
+            
+            # Issue search tools
+            search_issues_tool,
+            
+            # Project item filtering tools
+            filter_project_items_tool,
+            find_issues_by_field_tool,
+            
             # Sprint tools
             create_sprint_tool,
             list_sprints_tool,
@@ -157,6 +170,19 @@ class ToolRegistry:
         self.register_tool(list_issues_tool)
         self.register_tool(get_issue_tool)
         self.register_tool(update_issue_tool)
+        
+        # Register issue comment tools
+        self.register_tool(add_issue_comment_tool)
+        self.register_tool(list_issue_comments_tool)
+        self.register_tool(update_issue_comment_tool)
+        self.register_tool(delete_issue_comment_tool)
+        
+        # Register issue search tools
+        self.register_tool(search_issues_tool)
+        
+        # Register project item filtering tools
+        self.register_tool(filter_project_items_tool)
+        self.register_tool(find_issues_by_field_tool)
         
         # Register sprint tools
         self.register_tool(create_sprint_tool)

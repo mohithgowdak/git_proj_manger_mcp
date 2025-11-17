@@ -8,13 +8,13 @@ A comprehensive Model Context Protocol (MCP) server built in Python that provide
 
 ## Overview
 
-This server implements the [Model Context Protocol](https://modelcontextprotocol.io) to provide comprehensive GitHub project management through GitHub's GraphQL API. It offers 40+ tools for managing projects, issues, milestones, sprints, labels, and custom fields while maintaining state and handling errors according to MCP specifications.
+This server implements the [Model Context Protocol](https://modelcontextprotocol.io) to provide comprehensive GitHub project management through GitHub's GraphQL API. It offers 47+ tools for managing projects, issues, milestones, sprints, labels, comments, custom fields, and advanced search/filtering while maintaining state and handling errors according to MCP specifications.
 
 The server is built with Python 3.8+ and follows Clean Architecture principles, providing a maintainable and extensible codebase for GitHub project management operations.
 
 ### 🚀 Key Features
 
-- **40+ MCP Tools**: Complete CRUD operations for projects, issues, milestones, sprints, labels, and more
+- **47+ MCP Tools**: Complete CRUD operations for projects, issues, milestones, sprints, labels, comments, and more
 - **Roadmap Creation**: Create project roadmaps with milestones and issues
 - **Sprint Planning**: Plan and manage development sprints with metrics tracking
 - **Project Management**: Full support for GitHub Projects v2 with custom fields and views
@@ -118,6 +118,8 @@ python -m src --verbose
 - **List Issues**: List issues with filtering by status, assignee, labels, and milestone
 - **Get Issue Details**: Retrieve detailed information about specific issues
 - **Update Issues**: Update issue status, description, and metadata
+- **Search Issues**: Advanced issue search using GitHub query syntax (e.g., `is:issue is:open label:bug`)
+- **Issue Comments**: Add, list, update, and delete comments on issues
 
 ### 🏃 Sprint Planning
 
@@ -152,6 +154,8 @@ python -m src --verbose
 - **Add Items**: Add issues or PRs to projects
 - **Remove Items**: Remove items from projects
 - **List Items**: List all items in a project
+- **Filter Items**: Filter project items by field values (e.g., Priority, Status)
+- **Find by Field**: Find issues by specific project field values
 
 ## Installation
 
@@ -313,7 +317,7 @@ Add this to your VS Code MCP config:
 
 ## Available Tools
 
-The server provides 40+ MCP tools organized into the following categories:
+The server provides 47+ MCP tools organized into the following categories:
 
 ### Project Tools
 - `create_project` - Create a new GitHub project
@@ -336,6 +340,13 @@ The server provides 40+ MCP tools organized into the following categories:
 - `list_issues` - List issues with filtering
 - `get_issue` - Get issue details
 - `update_issue` - Update issue information
+- `search_issues` - Advanced issue search with GitHub query syntax
+
+### Issue Comment Tools
+- `add_issue_comment` - Add a comment to a GitHub issue
+- `list_issue_comments` - List all comments on a GitHub issue
+- `update_issue_comment` - Update a comment on a GitHub issue
+- `delete_issue_comment` - Delete a comment from a GitHub issue
 
 ### Sprint Tools
 - `create_sprint` - Create a new sprint
@@ -369,6 +380,8 @@ The server provides 40+ MCP tools organized into the following categories:
 - `add_project_item` - Add an item to a project
 - `remove_project_item` - Remove an item from a project
 - `list_project_items` - List all items in a project
+- `filter_project_items` - Filter project items by field values
+- `find_issues_by_field` - Find issues by project field values
 
 ### Field Value Tools
 - `set_field_value` - Set a field value for a project item
@@ -481,7 +494,7 @@ This Python implementation adapts the concepts and architecture from the origina
 - **MCP SDK**: Integrated with Python MCP SDK instead of TypeScript SDK
 - **Architecture**: Maintained Clean Architecture principles adapted for Python
 - **Dependencies**: Uses Python ecosystem (pygithub, httpx, aiohttp) instead of Node.js packages
-- **Tool System**: Reimplemented 40+ MCP tools using Python patterns
+- **Tool System**: Reimplemented 47+ MCP tools using Python patterns
 - **Error Handling**: Python-specific error handling with domain error types
 - **Caching**: In-memory caching implementation using Python dataclasses
 - **Documentation**: Updated all documentation for Python developers
@@ -492,9 +505,12 @@ We extend our gratitude to the original project maintainers and contributors for
 
 ### ✅ Implemented Features
 
-- **40+ MCP Tools**: All core project management tools are fully implemented
+- **47+ MCP Tools**: All core project management tools are fully implemented
 - **Project Management**: Complete CRUD operations for GitHub Projects v2
-- **Issue Management**: Full issue lifecycle management
+- **Issue Management**: Full issue lifecycle management with comments
+- **Issue Comments**: Complete comment management (add, list, update, delete)
+- **Advanced Search**: GitHub query syntax-based issue search
+- **Project Filtering**: Filter project items by field values
 - **Milestone Management**: Create, update, delete, and track milestones
 - **Sprint Planning**: Sprint creation, planning, and metrics tracking
 - **Roadmap Creation**: Automated roadmap generation with milestones and issues
