@@ -1,0 +1,207 @@
+%% Class Diagram - MCP GitHub Project Manager
+
+classDiagram
+    %% MCP Server Classes
+    class GitHubProjectManagerServer {
+        -Server server
+        -ProjectManagementService service
+        -ToolRegistry registry
+        +__init__()
+        +list_tools()
+        +call_tool()
+    }
+
+    class ToolRegistry {
+        -Dict[str, ToolDefinition] _tools
+        +register_tool()
+        +get_tool()
+        +get_all_tools()
+        +get_tools_for_mcp()
+        -_register_built_in_tools()
+    }
+
+    class ToolDefinition {
+        +str name
+        +str description
+        +BaseModel schema
+        +Callable handler
+    }
+
+    class ToolHandler {
+        +execute_tool()
+        +validate_args()
+        +format_response()
+    }
+
+    %% Service Layer
+    class ProjectManagementService {
+        -GitHubRepositoryFactory _factory
+        +create_project()
+        +list_projects()
+        +get_project()
+        +update_project()
+        +delete_project()
+        +create_issue()
+        +list_issues()
+        +create_milestone()
+        +create_sprint()
+        +create_roadmap()
+    }
+
+    %% Repository Factory
+    class GitHubRepositoryFactory {
+        -GitHubConfig config
+        -Github github
+        -Repository repo
+        +create_project_repository()
+        +create_issue_repository()
+        +create_milestone_repository()
+        +create_sprint_repository()
+    }
+
+    %% Base Repository
+    class BaseGitHubRepository {
+        #Github _github
+        #Repository _repo
+        #GitHubConfig _config
+        #GraphQLClient _graphql_client
+        #GitHubErrorHandler _error_handler
+        +with_retry()
+        +handle_error()
+    }
+
+    %% Concrete Repositories
+    class GitHubProjectRepository {
+        +create()
+        +find_by_id()
+        +find_all()
+        +update()
+        +delete()
+        +create_field()
+        +create_view()
+        +add_item()
+    }
+
+    class GitHubIssueRepository {
+        +create()
+        +find_by_id()
+        +find_all()
+        +update()
+        +add_comment()
+        +search()
+    }
+
+    class GitHubMilestoneRepository {
+        +create()
+        +find_by_id()
+        +find_all()
+        +update()
+        +delete()
+        +get_metrics()
+    }
+
+    class GitHubSprintRepository {
+        +create()
+        +find_by_id()
+        +find_all()
+        +update()
+        +plan_sprint()
+        +get_metrics()
+    }
+
+    %% API Clients
+    class GraphQLClient {
+        -GitHubConfig config
+        -httpx.AsyncClient client
+        +execute_query()
+        +execute_mutation()
+        +handle_rate_limit()
+    }
+
+    class GitHubErrorHandler {
+        +handle_error()
+        +is_retryable()
+        +calculate_retry_delay()
+        +map_to_domain_error()
+    }
+
+    %% Supporting Systems
+    class ResourceCache {
+        -Dict cache
+        -int default_ttl
+        +set()
+        +get()
+        +get_by_type()
+        +get_by_tag()
+        +delete()
+        +clear()
+    }
+
+    class EventStore {
+        -List events
+        -int retention_days
+        +store_event()
+        +query_events()
+        +cleanup_old_events()
+    }
+
+    %% Domain Types
+    class Issue {
+        +str id
+        +str title
+        +str body
+        +str state
+        +List[str] labels
+    }
+
+    class Project {
+        +str id
+        +str title
+        +str description
+        +str visibility
+    }
+
+    class Milestone {
+        +str id
+        +str title
+        +str description
+        +datetime due_date
+    }
+
+    class Sprint {
+        +str id
+        +str title
+        +datetime start_date
+        +datetime end_date
+        +List[str] goals
+    }
+
+    %% Relationships
+    GitHubProjectManagerServer --> ToolRegistry : uses
+    GitHubProjectManagerServer --> ProjectManagementService : uses
+    ToolRegistry --> ToolDefinition : contains
+    ToolHandler --> ToolDefinition : uses
+    ToolHandler --> ProjectManagementService : calls
+    
+    ProjectManagementService --> GitHubRepositoryFactory : uses
+    GitHubRepositoryFactory --> GitHubProjectRepository : creates
+    GitHubRepositoryFactory --> GitHubIssueRepository : creates
+    GitHubRepositoryFactory --> GitHubMilestoneRepository : creates
+    GitHubRepositoryFactory --> GitHubSprintRepository : creates
+    
+    BaseGitHubRepository <|-- GitHubProjectRepository : extends
+    BaseGitHubRepository <|-- GitHubIssueRepository : extends
+    BaseGitHubRepository <|-- GitHubMilestoneRepository : extends
+    BaseGitHubRepository <|-- GitHubSprintRepository : extends
+    
+    BaseGitHubRepository --> GraphQLClient : uses
+    BaseGitHubRepository --> GitHubErrorHandler : uses
+    
+    ProjectManagementService --> ResourceCache : uses
+    ProjectManagementService --> EventStore : uses
+    
+    GitHubProjectRepository ..> Project : returns
+    GitHubIssueRepository ..> Issue : returns
+    GitHubMilestoneRepository ..> Milestone : returns
+    GitHubSprintRepository ..> Sprint : returns
+

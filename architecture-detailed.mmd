@@ -1,0 +1,224 @@
+%% Detailed Architecture Diagrams for MCP GitHub Project Manager
+
+%% ============================================
+%% DIAGRAM 1: System Component Architecture
+%% ============================================
+graph TB
+    subgraph "External Layer"
+        MCPClient["MCP Client<br/>(Cursor/Claude/VS Code)"]
+    end
+
+    subgraph "MCP Protocol Layer"
+        StdioTransport["stdio Transport<br/>JSON-RPC Messages"]
+        MCPServer["GitHubProjectManagerServer<br/>- list_tools()<br/>- call_tool()"]
+    end
+
+    subgraph "Tool Execution Layer"
+        ToolRegistry["ToolRegistry<br/>- 47+ registered tools<br/>- Tool discovery<br/>- Schema conversion"]
+        ToolHandler["Tool Handler<br/>- Route to handler<br/>- Execute logic"]
+        ToolValidator["Tool Validator<br/>- Pydantic validation<br/>- Type coercion<br/>- Error formatting"]
+    end
+
+    subgraph "Business Logic Layer"
+        PMService["ProjectManagementService<br/>- Project operations<br/>- Issue operations<br/>- Milestone operations<br/>- Sprint operations<br/>- Roadmap creation"]
+    end
+
+    subgraph "Repository Layer"
+        RepoFactory["GitHubRepositoryFactory<br/>- Creates repositories<br/>- Manages GitHub client"]
+        
+        subgraph "Concrete Repositories"
+            ProjectRepo["ProjectRepository<br/>- CRUD operations<br/>- Custom fields<br/>- Views<br/>- Items"]
+            IssueRepo["IssueRepository<br/>- CRUD operations<br/>- Comments<br/>- Search"]
+            MilestoneRepo["MilestoneRepository<br/>- CRUD operations<br/>- Metrics"]
+            SprintRepo["SprintRepository<br/>- CRUD operations<br/>- Planning<br/>- Metrics"]
+        end
+        
+        BaseRepo["BaseGitHubRepository<br/>- Retry logic<br/>- Error handling<br/>- Rate limiting"]
+    end
+
+    subgraph "API Integration Layer"
+        GraphQLClient["GraphQL Client<br/>- Async httpx<br/>- Query execution<br/>- Response parsing"]
+        PyGithubClient["PyGithub Client<br/>- REST API<br/>- Repository access"]
+        ErrorHandler["GitHubErrorHandler<br/>- Error mapping<br/>- Retry detection<br/>- Rate limit handling"]
+    end
+
+    subgraph "Supporting Systems"
+        Cache["ResourceCache<br/>- In-memory storage<br/>- TTL: 1 hour<br/>- Tag-based queries<br/>- 60-80% hit rate"]
+        Events["EventStore<br/>- Resource events<br/>- Change tracking<br/>- Query support"]
+        Logger["Logger<br/>- Structured logging<br/>- Debug/Info/Error"]
+    end
+
+    subgraph "Domain Layer"
+        Types["Domain Types<br/>- Issue, Project<br/>- Milestone, Sprint<br/>- CustomField, View"]
+        Protocols["Repository Protocols<br/>- Type-safe interfaces<br/>- Dependency inversion"]
+        Errors["Domain Errors<br/>- ValidationError<br/>- RateLimitError<br/>- ResourceNotFoundError"]
+    end
+
+    subgraph "External APIs"
+        GitHubAPI["GitHub API<br/>- GraphQL endpoint<br/>- REST endpoint<br/>- Projects v2"]
+    end
+
+    %% Flow connections
+    MCPClient -->|JSON-RPC| StdioTransport
+    StdioTransport -->|MCP Protocol| MCPServer
+    MCPServer -->|list_tools| ToolRegistry
+    MCPServer -->|call_tool| ToolHandler
+    ToolHandler -->|validate| ToolValidator
+    ToolHandler -->|execute| PMService
+    PMService -->|get_repo| RepoFactory
+    RepoFactory -->|create| ProjectRepo
+    RepoFactory -->|create| IssueRepo
+    RepoFactory -->|create| MilestoneRepo
+    RepoFactory -->|create| SprintRepo
+    
+    ProjectRepo -.->|inherits| BaseRepo
+    IssueRepo -.->|inherits| BaseRepo
+    MilestoneRepo -.->|inherits| BaseRepo
+    SprintRepo -.->|inherits| BaseRepo
+    
+    BaseRepo -->|queries| GraphQLClient
+    BaseRepo -->|calls| PyGithubClient
+    BaseRepo -->|handles| ErrorHandler
+    GraphQLClient -->|HTTP| GitHubAPI
+    PyGithubClient -->|HTTP| GitHubAPI
+    
+    PMService -->|cache| Cache
+    PMService -->|store| Events
+    PMService -->|log| Logger
+    
+    Repositories -.->|implements| Protocols
+    PMService -.->|uses| Types
+    ErrorHandler -.->|maps to| Errors
+
+    %% Styling
+    classDef external fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    classDef mcp fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px
+    classDef tool fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef service fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    classDef repo fill:#fff9c4,stroke:#f57f17,stroke-width:2px
+    classDef api fill:#fce4ec,stroke:#c2185b,stroke-width:2px
+    classDef support fill:#e0f2f1,stroke:#00695c,stroke-width:2px
+    classDef domain fill:#f1f8e9,stroke:#558b2f,stroke-width:2px
+
+    class MCPClient external
+    class StdioTransport,MCPServer mcp
+    class ToolRegistry,ToolHandler,ToolValidator tool
+    class PMService service
+    class RepoFactory,ProjectRepo,IssueRepo,MilestoneRepo,SprintRepo,BaseRepo repo
+    class GraphQLClient,PyGithubClient,ErrorHandler,GitHubAPI api
+    class Cache,Events,Logger support
+    class Types,Protocols,Errors domain
+
+%% ============================================
+%% DIAGRAM 2: Request Flow Sequence
+%% ============================================
+sequenceDiagram
+    participant Client as MCP Client
+    participant Server as MCP Server
+    participant Registry as Tool Registry
+    participant Handler as Tool Handler
+    participant Validator as Tool Validator
+    participant Service as PM Service
+    participant Factory as Repo Factory
+    participant Repo as Repository
+    participant Cache as Resource Cache
+    participant API as GitHub API
+
+    Client->>Server: call_tool("create_issue", args)
+    Server->>Registry: get_tool("create_issue")
+    Registry-->>Server: ToolDefinition
+    Server->>Handler: execute_tool(tool, args)
+    Handler->>Validator: validate(args, schema)
+    Validator-->>Handler: Validated args
+    Handler->>Service: create_issue(validated_args)
+    Service->>Factory: create_issue_repository()
+    Factory-->>Service: IssueRepository
+    Service->>Cache: get(ResourceType.ISSUE, id)
+    Cache-->>Service: Cache miss
+    Service->>Repo: create(issue_data)
+    Repo->>API: GraphQL mutation
+    API-->>Repo: Issue response
+    Repo-->>Service: Issue object
+    Service->>Cache: set(ResourceType.ISSUE, id, issue)
+    Service-->>Handler: Issue object
+    Handler-->>Server: MCP Response
+    Server-->>Client: JSON-RPC Response
+
+%% ============================================
+%% DIAGRAM 3: Error Handling Flow
+%% ============================================
+graph LR
+    A[API Request] --> B{Success?}
+    B -->|Yes| C[Return Data]
+    B -->|No| D[GitHubErrorHandler]
+    D --> E{Error Type?}
+    E -->|401/403| F[UnauthorizedError]
+    E -->|404| G[ResourceNotFoundError]
+    E -->|429| H[RateLimitError]
+    E -->|500-504| I[Retryable Error]
+    E -->|400| J[ValidationError]
+    I --> K{Retry Count < 3?}
+    K -->|Yes| L[Exponential Backoff]
+    L --> M[Wait: 1s, 2s, 4s]
+    M --> A
+    K -->|No| N[IntegrationError]
+    F --> O[Domain Error]
+    G --> O
+    H --> O
+    J --> O
+    N --> O
+    O --> P[Tool Handler]
+    P --> Q[MCP Error Response]
+
+%% ============================================
+%% DIAGRAM 4: Caching Strategy
+%% ============================================
+graph TB
+    A[Service Request] --> B{Cache Hit?}
+    B -->|Yes| C[Return Cached Data]
+    B -->|No| D[Query GitHub API]
+    D --> E[Get Response]
+    E --> F[Store in Cache<br/>TTL: 1 hour<br/>Tags: type, status, etc.]
+    F --> G[Return Data]
+    
+    H[Cache Operations] --> I[get_by_type]
+    H --> J[get_by_tag]
+    H --> K[get_by_namespace]
+    H --> L[set with TTL]
+    H --> M[delete]
+    H --> N[clear expired]
+    
+    O[Cache Indexes] --> P[Type Index<br/>ResourceType -> IDs]
+    O --> Q[Tag Index<br/>Tag -> IDs]
+    O --> R[Namespace Index<br/>Namespace -> IDs]
+
+%% ============================================
+%% DIAGRAM 5: Tool Categories
+%% ============================================
+graph LR
+    subgraph "47+ MCP Tools"
+        A[Project Tools<br/>5 tools]
+        B[Issue Tools<br/>5 tools]
+        C[Comment Tools<br/>4 tools]
+        D[Milestone Tools<br/>7 tools]
+        E[Sprint Tools<br/>8 tools]
+        F[Roadmap Tools<br/>1 tool]
+        G[Label Tools<br/>2 tools]
+        H[Field Tools<br/>3 tools]
+        I[View Tools<br/>4 tools]
+        J[Item Tools<br/>5 tools]
+        K[Search Tools<br/>3 tools]
+    end
+
+    A --> L[create, list, get,<br/>update, delete]
+    B --> M[create, list, get,<br/>update, search]
+    C --> N[add, list, update,<br/>delete comments]
+    D --> O[create, list, update,<br/>delete, metrics,<br/>overdue, upcoming]
+    E --> P[create, list, get,<br/>update, plan, add/remove<br/>issues, metrics]
+    F --> Q[create_roadmap]
+    G --> R[create, list]
+    H --> S[create, list, update]
+    I --> T[create, list, update,<br/>delete]
+    J --> U[add, remove, list,<br/>filter, find_by_field]
+    K --> V[search_issues,<br/>filter_items,<br/>find_by_field]
+

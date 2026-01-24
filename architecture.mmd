@@ -1,0 +1,147 @@
+graph TB
+    %% External Clients
+    subgraph Clients["MCP Clients"]
+        Cursor["Cursor IDE"]
+        Claude["Claude Desktop"]
+        VSCode["VS Code"]
+    end
+
+    %% MCP Server Layer
+    subgraph MCPServer["MCP Server Layer"]
+        Server["GitHubProjectManagerServer<br/>(MCP Server)"]
+        StdioTransport["stdio Transport<br/>(JSON-RPC)"]
+    end
+
+    %% Tool Layer
+    subgraph ToolLayer["Tool Layer"]
+        ToolRegistry["ToolRegistry<br/>(Singleton)<br/>47+ Tools"]
+        ToolHandlers["Tool Handlers<br/>(47+ Functions)"]
+        ToolValidator["Tool Validator<br/>(Pydantic Validation)"]
+        ToolSchemas["Tool Schemas<br/>(Pydantic Models)"]
+        ResultFormatter["Result Formatter<br/>(MCP Response)"]
+    end
+
+    %% Service Layer
+    subgraph ServiceLayer["Service Layer"]
+        PMService["ProjectManagementService<br/>(Orchestrator)"]
+        AIService["AI Service Factory<br/>(Future)"]
+    end
+
+    %% Infrastructure Layer - GitHub
+    subgraph InfraGitHub["Infrastructure - GitHub Integration"]
+        RepoFactory["GitHubRepositoryFactory<br/>(Factory Pattern)"]
+        GitHubConfig["GitHubConfig"]
+        ErrorHandler["GitHubErrorHandler<br/>(Error Mapping)"]
+        
+        subgraph Repositories["Repositories"]
+            BaseRepo["BaseGitHubRepository<br/>(Retry Logic)"]
+            ProjectRepo["GitHubProjectRepository"]
+            IssueRepo["GitHubIssueRepository"]
+            MilestoneRepo["GitHubMilestoneRepository"]
+            SprintRepo["GitHubSprintRepository"]
+        end
+        
+        GraphQLClient["GraphQL Client<br/>(httpx)"]
+        PyGithub["PyGithub Client<br/>(REST API)"]
+    end
+
+    %% Infrastructure Layer - Supporting Systems
+    subgraph InfraSupport["Infrastructure - Supporting Systems"]
+        ResourceCache["ResourceCache<br/>(In-Memory)<br/>TTL: 1 hour<br/>60-80% Hit Rate"]
+        EventStore["EventStore<br/>(Resource Events)"]
+        EventSubMgr["Event Subscription Manager"]
+        Logger["Logger<br/>(Structured Logging)"]
+    end
+
+    %% Domain Layer
+    subgraph DomainLayer["Domain Layer"]
+        DomainTypes["Domain Types<br/>(Issue, Project,<br/>Milestone, Sprint)"]
+        DomainErrors["Domain Errors<br/>(ValidationError,<br/>RateLimitError, etc.)"]
+        DomainProtocols["Repository Protocols<br/>(IssueRepository,<br/>ProjectRepository, etc.)"]
+        ResourceTypes["Resource Types<br/>(ResourceType,<br/>ResourceStatus)"]
+    end
+
+    %% External Systems
+    subgraph External["External Systems"]
+        GitHubAPI["GitHub API<br/>(GraphQL + REST)"]
+        GitHubProjects["GitHub Projects v2"]
+        GitHubIssues["GitHub Issues"]
+        GitHubMilestones["GitHub Milestones"]
+    end
+
+    %% Client Connections
+    Cursor --> StdioTransport
+    Claude --> StdioTransport
+    VSCode --> StdioTransport
+    StdioTransport --> Server
+
+    %% MCP Server to Tool Layer
+    Server --> ToolRegistry
+    Server --> ToolHandlers
+    ToolRegistry --> ToolSchemas
+    ToolHandlers --> ToolValidator
+    ToolValidator --> ToolSchemas
+    ToolHandlers --> ResultFormatter
+    ResultFormatter --> Server
+
+    %% Tool Layer to Service Layer
+    ToolHandlers --> PMService
+    PMService --> AIService
+
+    %% Service Layer to Infrastructure
+    PMService --> RepoFactory
+    RepoFactory --> GitHubConfig
+    RepoFactory --> ErrorHandler
+    RepoFactory --> BaseRepo
+    RepoFactory --> ProjectRepo
+    RepoFactory --> IssueRepo
+    RepoFactory --> MilestoneRepo
+    RepoFactory --> SprintRepo
+
+    %% Repository Inheritance
+    BaseRepo -.->|inherits| ProjectRepo
+    BaseRepo -.->|inherits| IssueRepo
+    BaseRepo -.->|inherits| MilestoneRepo
+    BaseRepo -.->|inherits| SprintRepo
+
+    %% Repositories to GitHub API
+    BaseRepo --> GraphQLClient
+    BaseRepo --> PyGithub
+    GraphQLClient --> GitHubAPI
+    PyGithub --> GitHubAPI
+
+    %% GitHub API to Resources
+    GitHubAPI --> GitHubProjects
+    GitHubAPI --> GitHubIssues
+    GitHubAPI --> GitHubMilestones
+
+    %% Caching and Events
+    PMService --> ResourceCache
+    PMService --> EventStore
+    EventStore --> EventSubMgr
+    PMService --> Logger
+
+    %% Domain Layer Dependencies
+    PMService -.->|uses| DomainTypes
+    PMService -.->|uses| DomainProtocols
+    Repositories -.->|implements| DomainProtocols
+    ErrorHandler -.->|maps to| DomainErrors
+    ToolValidator -.->|validates| DomainTypes
+
+    %% Styling
+    classDef clientStyle fill:#e1f5ff,stroke:#01579b,stroke-width:2px
+    classDef mcpStyle fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    classDef toolStyle fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef serviceStyle fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    classDef infraStyle fill:#fff9c4,stroke:#f57f17,stroke-width:2px
+    classDef domainStyle fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+    classDef externalStyle fill:#ffebee,stroke:#b71c1c,stroke-width:2px
+
+    class Cursor,Claude,VSCode clientStyle
+    class Server,StdioTransport mcpStyle
+    class ToolRegistry,ToolHandlers,ToolValidator,ToolSchemas,ResultFormatter toolStyle
+    class PMService,AIService serviceStyle
+    class RepoFactory,GitHubConfig,ErrorHandler,BaseRepo,ProjectRepo,IssueRepo,MilestoneRepo,SprintRepo,GraphQLClient,PyGithub,ResourceCache,EventStore,EventSubMgr,Logger infraStyle
+    class DomainTypes,DomainErrors,DomainProtocols,ResourceTypes domainStyle
+    class GitHubAPI,GitHubProjects,GitHubIssues,GitHubMilestones externalStyle
+

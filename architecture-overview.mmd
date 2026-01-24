@@ -1,0 +1,78 @@
+%% Simplified Overview Architecture Diagram
+
+graph TB
+    subgraph "Client Applications"
+        C1["Cursor IDE"]
+        C2["Claude Desktop"]
+        C3["VS Code"]
+    end
+
+    subgraph "MCP GitHub Project Manager Server"
+        subgraph "Entry Point"
+            MCP["MCP Server<br/>JSON-RPC via stdio"]
+        end
+        
+        subgraph "Tool Execution"
+            TR["Tool Registry<br/>47+ Tools"]
+            TH["Tool Handlers<br/>& Validators"]
+        end
+        
+        subgraph "Business Logic"
+            PMS["Project Management<br/>Service"]
+        end
+        
+        subgraph "Data Access"
+            RF["Repository Factory"]
+            PR["Project Repo"]
+            IR["Issue Repo"]
+            MR["Milestone Repo"]
+            SR["Sprint Repo"]
+        end
+        
+        subgraph "Infrastructure"
+            GQL["GraphQL Client"]
+            PG["PyGithub Client"]
+            EC["Error Handler"]
+            RC["Resource Cache<br/>60-80% Hit Rate"]
+        end
+    end
+
+    subgraph "External Services"
+        GH["GitHub API<br/>(GraphQL + REST)"]
+    end
+
+    C1 --> MCP
+    C2 --> MCP
+    C3 --> MCP
+    
+    MCP --> TR
+    TR --> TH
+    TH --> PMS
+    
+    PMS --> RF
+    RF --> PR
+    RF --> IR
+    RF --> MR
+    RF --> SR
+    
+    PR --> GQL
+    IR --> GQL
+    MR --> GQL
+    SR --> GQL
+    
+    PR --> PG
+    IR --> PG
+    
+    GQL --> EC
+    PG --> EC
+    EC --> GH
+    
+    PMS --> RC
+    
+    style MCP fill:#9c27b0,color:#fff
+    style TR fill:#ff9800,color:#fff
+    style PMS fill:#4caf50,color:#fff
+    style RF fill:#ffc107,color:#000
+    style GH fill:#f44336,color:#fff
+    style RC fill:#00bcd4,color:#fff
+
