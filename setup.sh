@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Sets up the GitHub Project Manager MCP server and registers it with Claude.
+# Sets up the GitHub Project Manager MCP server and registers it with Claude Code CLI.
 set -euo pipefail
 
 # ── Colors ────────────────────────────────────────────────────────────────────
@@ -28,11 +28,10 @@ success "Found $($PYTHON --version)"
 # ── 2. Virtual environment ────────────────────────────────────────────────────
 VENV_DIR="$REPO_DIR/venv"
 if [[ ! -d "$VENV_DIR" ]]; then
-    info "Creating virtual environment at $VENV_DIR..."
+    info "Creating virtual environment..."
     "$PYTHON" -m venv "$VENV_DIR"
 fi
 
-# Activate (Git Bash on Windows uses Scripts/, Unix uses bin/)
 if [[ -f "$VENV_DIR/Scripts/activate" ]]; then
     # shellcheck disable=SC1091
     source "$VENV_DIR/Scripts/activate"
@@ -52,7 +51,7 @@ success "Dependencies installed."
 
 # ── 4. Gather GitHub credentials ─────────────────────────────────────────────
 echo ""
-echo -e "${YELLOW}Enter your GitHub credentials (required to run the MCP server):${NC}"
+echo -e "${YELLOW}Enter your GitHub credentials:${NC}"
 echo ""
 
 read -rp "  GitHub Personal Access Token : " GITHUB_TOKEN
@@ -65,109 +64,165 @@ read -rp "  GitHub Repository name       : " GITHUB_REPO
 [[ -z "$GITHUB_REPO" ]] && error "GITHUB_REPO cannot be empty."
 
 # ── 5. Write .env file ────────────────────────────────────────────────────────
-ENV_FILE="$REPO_DIR/.env"
-cat > "$ENV_FILE" <<ENVEOF
+cat > "$REPO_DIR/.env" <<ENVEOF
 GITHUB_TOKEN=$GITHUB_TOKEN
 GITHUB_OWNER=$GITHUB_OWNER
 GITHUB_REPO=$GITHUB_REPO
 ENVEOF
-success ".env written → $ENV_FILE"
+success ".env written."
 
-# ── 6. Determine Claude config paths ─────────────────────────────────────────
-# Claude Desktop: platform-specific JSON config file
-# Claude Code CLI: user-level settings (~/.claude/settings.json on all platforms)
+# ── 6. Register with Claude Code CLI ─────────────────────────────────────────
+# Stored in ~/.claude.json (user scope = available in all projects).
+# Re-running removes the old entry first to avoid duplicates.
+if command -v claude &>/dev/null; then
+    info "Registering with Claude Code CLI..."
+    claude mcp remove "github-project-manager" -s user 2>/dev/null || true
+    claude mcp add "github-project-manager" \
+        -s user \
+        -e PYTHONPATH="$REPO_DIR" \
+        -e GITHUB_TOKEN="$GITHUB_TOKEN" \
+        -e GITHUB_OWNER="$GITHUB_OWNER" \
+        -e GITHUB_REPO="$GITHUB_REPO" \
+        -- "$PYTHON_EXEC" -m src
+    success "Registered with Claude Code CLI."
+else
+    warn "'claude' CLI not found — skipping CLI registration."
+fi
 
+# ── 7. Register with Claude Desktop ──────────────────────────────────────────
+# Claude Desktop reads from a JSON config file; mcpServers go there directly.
 case "$(uname -s)" in
     Darwin)
         CLAUDE_DESKTOP_CONFIG="$HOME/Library/Application Support/Claude/claude_desktop_config.json"
-        CLAUDE_CODE_SETTINGS="$HOME/.claude/settings.json"
         ;;
     MINGW*|MSYS*|CYGWIN*)
-        # Git Bash on Windows — APPDATA is a Windows path, convert to POSIX
-        WIN_APPDATA="${APPDATA:-}"
-        if [[ -z "$WIN_APPDATA" ]]; then
-            WIN_APPDATA="$(cmd.exe /c "echo %APPDATA%" 2>/dev/null | tr -d '\r\n')"
-        fi
-        POSIX_APPDATA="$(cygpath -u "$WIN_APPDATA" 2>/dev/null || echo "$WIN_APPDATA")"
-        CLAUDE_DESKTOP_CONFIG="$POSIX_APPDATA/Claude/claude_desktop_config.json"
-        USERPROFILE_POSIX="$(cygpath -u "${USERPROFILE:-$HOME}" 2>/dev/null || echo "$HOME")"
-        CLAUDE_CODE_SETTINGS="$USERPROFILE_POSIX/.claude/settings.json"
+        WIN_APPDATA="${APPDATA:-$(cmd.exe /c "echo %APPDATA%" 2>/dev/null | tr -d '\r\n')}"
+        CLAUDE_DESKTOP_CONFIG="$(cygpath -u "$WIN_APPDATA" 2>/dev/null || echo "$WIN_APPDATA")/Claude/claude_desktop_config.json"
         ;;
     Linux)
         CLAUDE_DESKTOP_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/Claude/claude_desktop_config.json"
-        CLAUDE_CODE_SETTINGS="$HOME/.claude/settings.json"
         ;;
     *)
         CLAUDE_DESKTOP_CONFIG=""
-        CLAUDE_CODE_SETTINGS="$HOME/.claude/settings.json"
         ;;
 esac
 
-# ── 7. Helper: merge mcpServers entry into a JSON config file ─────────────────
-merge_mcp_config() {
-    local config_file="$1"
-    local server_name="$2"
-    local server_json="$3"   # JSON object for this single server
-
-    mkdir -p "$(dirname "$config_file")"
-
+if [[ -n "$CLAUDE_DESKTOP_CONFIG" && ( -f "$CLAUDE_DESKTOP_CONFIG" || -d "$(dirname "$CLAUDE_DESKTOP_CONFIG")" ) ]]; then
+    info "Registering with Claude Desktop..."
+    DESKTOP_CONFIG_WIN="$(cygpath -w "$CLAUDE_DESKTOP_CONFIG" 2>/dev/null || echo "$CLAUDE_DESKTOP_CONFIG")"
+    PYTHON_EXEC_WIN="$(cygpath -w "$PYTHON_EXEC" 2>/dev/null || echo "$PYTHON_EXEC")"
+    REPO_DIR_WIN="$(cygpath -w "$REPO_DIR" 2>/dev/null || echo "$REPO_DIR")"
     "$PYTHON_EXEC" - <<PYEOF
-import json, os, sys
+import json, os
 
-config_file = r"""$config_file"""
-server_name = r"""$server_name"""
-server_json = r"""$server_json"""
-
+path = r"""$DESKTOP_CONFIG_WIN"""
+entry = {
+    "command": r"""$PYTHON_EXEC_WIN""",
+    "args": ["-m", "src"],
+    "env": {
+        "PYTHONPATH": r"""$REPO_DIR_WIN""",
+        "GITHUB_TOKEN": r"""$GITHUB_TOKEN""",
+        "GITHUB_OWNER": r"""$GITHUB_OWNER""",
+        "GITHUB_REPO":  r"""$GITHUB_REPO""",
+    }
+}
 try:
-    with open(config_file, encoding="utf-8") as f:
-        config = json.load(f)
+    with open(path, encoding="utf-8") as f:
+        cfg = json.load(f)
 except (FileNotFoundError, json.JSONDecodeError):
-    config = {}
-
-config.setdefault("mcpServers", {})[server_name] = json.loads(server_json)
-
-with open(config_file, "w", encoding="utf-8") as f:
-    json.dump(config, f, indent=2)
+    cfg = {}
+cfg.setdefault("mcpServers", {})["github-project-manager"] = entry
+with open(path, "w", encoding="utf-8") as f:
+    json.dump(cfg, f, indent=2)
     f.write("\n")
 PYEOF
-}
-
-# Build the server JSON (single entry, no surrounding mcpServers key)
-SERVER_JSON=$(cat <<JSONEOF
-{
-  "command": "$PYTHON_EXEC",
-  "args": ["-m", "src"],
-  "cwd": "$REPO_DIR",
-  "env": {
-    "PYTHONPATH": "$REPO_DIR",
-    "GITHUB_TOKEN": "$GITHUB_TOKEN",
-    "GITHUB_OWNER": "$GITHUB_OWNER",
-    "GITHUB_REPO": "$GITHUB_REPO"
-  }
-}
-JSONEOF
-)
-
-# ── 8. Register with Claude Code CLI (settings.json) ─────────────────────────
-info "Registering with Claude Code CLI → $CLAUDE_CODE_SETTINGS"
-if merge_mcp_config "$CLAUDE_CODE_SETTINGS" "github-project-manager" "$SERVER_JSON"; then
-    success "Claude Code CLI config updated."
+    success "Claude Desktop config updated → $CLAUDE_DESKTOP_CONFIG"
+    warn "Restart Claude Desktop to pick up the change."
 else
-    warn "Could not update Claude Code CLI config. See manual step at the bottom."
+    info "Claude Desktop not detected — skipping."
 fi
 
-# ── 9. Register with Claude Desktop (if config exists or Desktop is installed) ──
-if [[ -n "$CLAUDE_DESKTOP_CONFIG" ]]; then
-    if [[ -f "$CLAUDE_DESKTOP_CONFIG" ]] || [[ -d "$(dirname "$CLAUDE_DESKTOP_CONFIG")" ]]; then
-        info "Registering with Claude Desktop → $CLAUDE_DESKTOP_CONFIG"
-        if merge_mcp_config "$CLAUDE_DESKTOP_CONFIG" "github-project-manager" "$SERVER_JSON"; then
-            success "Claude Desktop config updated."
-        else
-            warn "Could not update Claude Desktop config. See manual step at the bottom."
-        fi
-    else
-        warn "Claude Desktop config dir not found — skipping Desktop registration."
-    fi
+# ── 8. Register with Cline (VS Code extension) ───────────────────────────────
+# Cline reads MCP servers from its globalStorage settings file.
+case "$(uname -s)" in
+    Darwin)
+        CLINE_CONFIG="$HOME/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json"
+        ;;
+    MINGW*|MSYS*|CYGWIN*)
+        WIN_APPDATA2="${APPDATA:-$(cmd.exe /c "echo %APPDATA%" 2>/dev/null | tr -d '\r\n')}"
+        CLINE_CONFIG="$(cygpath -u "$WIN_APPDATA2" 2>/dev/null || echo "$WIN_APPDATA2")/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json"
+        ;;
+    Linux)
+        CLINE_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json"
+        ;;
+    *)
+        CLINE_CONFIG=""
+        ;;
+esac
+
+if [[ -n "$CLINE_CONFIG" ]]; then
+    # Convert POSIX path → Windows path so Python (native Windows) can open it
+    CLINE_CONFIG_WIN="$(cygpath -w "$CLINE_CONFIG" 2>/dev/null || echo "$CLINE_CONFIG")"
+    PYTHON_EXEC_WIN="$(cygpath -w "$PYTHON_EXEC" 2>/dev/null || echo "$PYTHON_EXEC")"
+    REPO_DIR_WIN="$(cygpath -w "$REPO_DIR" 2>/dev/null || echo "$REPO_DIR")"
+
+    info "Registering with Cline..."
+    "$PYTHON_EXEC" - <<PYEOF || warn "Cline registration failed — see manual JSON below."
+import json, os
+
+path = r"""$CLINE_CONFIG_WIN"""
+entry = {
+    "command": r"""$PYTHON_EXEC_WIN""",
+    "args": ["-m", "src"],
+    "env": {
+        "PYTHONPATH": r"""$REPO_DIR_WIN""",
+        "GITHUB_TOKEN": r"""$GITHUB_TOKEN""",
+        "GITHUB_OWNER": r"""$GITHUB_OWNER""",
+        "GITHUB_REPO":  r"""$GITHUB_REPO""",
+    }
+}
+os.makedirs(os.path.dirname(path), exist_ok=True)
+try:
+    with open(path, encoding="utf-8") as f:
+        cfg = json.load(f)
+except (FileNotFoundError, json.JSONDecodeError):
+    cfg = {}
+cfg.setdefault("mcpServers", {})["github-project-manager"] = entry
+with open(path, "w", encoding="utf-8") as f:
+    json.dump(cfg, f, indent=2)
+    f.write("\n")
+PYEOF
+    success "Cline config updated → $CLINE_CONFIG"
+    warn "Reload VS Code window (Ctrl+Shift+P → 'Developer: Reload Window') to pick up the change."
+else
+    info "Cline not detected — skipping auto-registration."
+fi
+
+echo ""
+echo -e "  ${YELLOW}Cline MCP JSON${NC} — add this to your cline_mcp_settings.json if needed:"
+echo ""
+cat <<JSONEOF
+  {
+    "mcpServers": {
+      "github-project-manager": {
+        "command": "$PYTHON_EXEC",
+        "args": ["-m", "src"],
+        "env": {
+          "PYTHONPATH": "$REPO_DIR",
+          "GITHUB_TOKEN": "$GITHUB_TOKEN",
+          "GITHUB_OWNER": "$GITHUB_OWNER",
+          "GITHUB_REPO": "$GITHUB_REPO"
+        }
+      }
+    }
+  }
+JSONEOF
+
+# ── 9. Verify ─────────────────────────────────────────────────────────────────
+if command -v claude &>/dev/null; then
+    echo ""
+    info "Verifying connection..."
+    claude mcp list 2>&1 | grep -E "github-project-manager|ERROR" || true
 fi
 
 # ── 10. Summary ───────────────────────────────────────────────────────────────
@@ -176,19 +231,10 @@ echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━
 echo -e "${GREEN}  Setup complete!${NC}"
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
-echo "  Repo     : $REPO_DIR"
-echo "  Python   : $PYTHON_EXEC"
-echo "  Owner    : $GITHUB_OWNER / $GITHUB_REPO"
+echo "  Repo   : $REPO_DIR"
+echo "  Python : $PYTHON_EXEC"
+echo "  Owner  : $GITHUB_OWNER / $GITHUB_REPO"
 echo ""
-echo "  Next steps:"
-echo "    • Claude Code CLI  — restart the CLI session"
-echo "    • Claude Desktop   — quit and reopen the app"
-echo ""
-echo -e "${YELLOW}Manual config (paste into mcpServers if auto-registration failed):${NC}"
-cat <<MANUALEOF
-{
-  "mcpServers": {
-    "github-project-manager": $SERVER_JSON
-  }
-}
-MANUALEOF
+echo "  • Claude Code  — restart your session to load the new server."
+echo "  • Claude Desktop — restart the app."
+echo "  • Cline (VS Code) — Ctrl+Shift+P → 'Developer: Reload Window'."
